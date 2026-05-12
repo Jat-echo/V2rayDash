@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/google/uuid"
 	"v2ray-dash/backend/internal/model"
 )
 
@@ -97,6 +98,5 @@ func (r *SubscriptionRepository) Delete(id string) error {
 }
 
 func generateUUID() string {
-	// 使用 github.com/google/uuid
-	return "placeholder-uuid"
+	return uuid.New().String()
 }
