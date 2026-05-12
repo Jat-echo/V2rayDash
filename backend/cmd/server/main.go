@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"v2ray-dash/backend/internal/config"
 	"v2ray-dash/backend/internal/handler"
@@ -13,6 +18,7 @@ import (
 
 func main() {
 	cfg := config.Load()
+	cfg.Validate()
 
 	db, err := database.NewPostgres(cfg.DatabaseURL)
 	if err != nil {
@@ -25,10 +31,30 @@ func main() {
 	}
 
 	r := gin.Default()
-	handler.SetupRoutes(r, db)
+	handler.SetupRoutes(r, db, cfg)
 
-	log.Println("Server starting on :8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	srv := &http.Server{
+		Addr:    ":" + cfg.ServerPort,
+		Handler: r,
 	}
+
+	go func() {
+		log.Printf("Server starting on :%s", cfg.ServerPort)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited")
 }
