@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS servers (
     ip VARCHAR(45) NOT NULL,
     ssh_port INTEGER DEFAULT 22,
     ssh_user VARCHAR(50) DEFAULT 'root',
-    ssh_key TEXT,
+    ssh_key TEXT DEFAULT NULL,
     tags JSONB DEFAULT '[]',
     status VARCHAR(20) DEFAULT 'unknown',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS servers (
 -- 订阅账号表
 CREATE TABLE IF NOT EXISTS subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    server_id UUID REFERENCES servers(id) ON DELETE CASCADE,
+    server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     uuid VARCHAR(36) NOT NULL UNIQUE,
     enable BOOLEAN DEFAULT true,

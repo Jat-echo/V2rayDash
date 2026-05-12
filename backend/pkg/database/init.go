@@ -2,15 +2,13 @@ package database
 
 import (
 	"database/sql"
-	"os"
+	_ "embed"
 )
 
-func InitSchema(db *DB) error {
-	schema, err := os.ReadFile("pkg/database/schema.sql")
-	if err != nil {
-		return err
-	}
+//go:embed schema.sql
+var schemaSQL string
 
-	_, err = db.Exec(string(schema))
+func InitSchema(db *DB) error {
+	_, err := db.Exec(schemaSQL)
 	return err
 }
