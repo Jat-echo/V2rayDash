@@ -7,10 +7,11 @@ export default function ServerList() {
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [installModalVisible, setInstallModalVisible] = useState(false)
+  const [installOutput, setInstallOutput] = useState('')
+  const [eventSource, setEventSource] = useState<EventSource | null>(null)
   const [selectedServer, setSelectedServer] = useState<Server | null>(null)
   const [form] = Form.useForm()
   const [sshKeyType, setSshKeyType] = useState<string>('key')
-  const [installCommand, setInstallCommand] = useState('')
 
   useEffect(() => {
     loadServers()
@@ -53,22 +54,30 @@ export default function ServerList() {
 
   const handleInstall = (server: Server) => {
     setSelectedServer(server)
-    // 生成安装命令（示例）
-    const serverId = server.id
-    const psk = btoa(Math.random().toString()).slice(0, 32)
-    const baseURL = window.location.origin
-    const cmd = `curl -sL ${baseURL}/install.sh | bash -s -- \\
-  --agent \\
-  --template standard-reality \\
-  --url ${baseURL} \\
-  --id ${serverId} \\
-  --psk ${psk}`
-    setInstallCommand(cmd)
+    setInstallOutput('')
     setInstallModalVisible(true)
+
+    // Create SSE connection
+    const es = new EventSource(`/api/servers/${server.id}/install`)
+    es.onmessage = (e) => {
+      setInstallOutput(prev => prev + e.data)
+    }
+    es.onerror = () => {
+      es.close()
+    }
+    setEventSource(es)
   }
 
-  const copyCommand = () => {
-    navigator.clipboard.writeText(installCommand)
+  const closeInstallModal = () => {
+    if (eventSource) {
+      eventSource.close()
+      setEventSource(null)
+    }
+    setInstallModalVisible(false)
+  }
+
+  const copyOutput = () => {
+    navigator.clipboard.writeText(installOutput)
     message.success('已复制到剪贴板')
   }
 
@@ -145,19 +154,26 @@ export default function ServerList() {
       <Modal
         title={`安装 v2ray 到 ${selectedServer?.name || ''}`}
         open={installModalVisible}
-        onCancel={() => setInstallModalVisible(false)}
+        onCancel={closeInstallModal}
         footer={[
-          <Button key="copy" type="primary" onClick={copyCommand}>
-            复制命令
+          <Button key="copy" onClick={copyOutput}>
+            复制输出
           </Button>,
-          <Button key="close" onClick={() => setInstallModalVisible(false)}>
+          <Button key="close" onClick={closeInstallModal}>
             关闭
           </Button>,
         ]}
       >
-        <p>在服务器上执行以下命令完成安装：</p>
-        <pre style={{ background: '#f5f5f5', padding: 16, borderRadius: 4, overflow: 'auto' }}>
-          {installCommand}
+        <pre style={{
+          background: '#1e1e1e',
+          color: '#0f0',
+          padding: 16,
+          borderRadius: 4,
+          maxHeight: 400,
+          overflow: 'auto',
+          fontFamily: 'monospace'
+        }}>
+          {installOutput || '正在连接...'}
         </pre>
       </Modal>
     </div>
