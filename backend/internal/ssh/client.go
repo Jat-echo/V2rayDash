@@ -24,6 +24,8 @@ func (a *KeyAuth) AuthMethod() ssh.AuthMethod {
 		// Try without passphrase
 		signer, err = ssh.ParsePrivateKey([]byte(a.PrivateKey))
 		if err != nil {
+			// WARNING: Returns nil if both passphrase and non-passphrase parsing fail.
+			// The caller should validate the auth method before use.
 			return nil
 		}
 	}
@@ -47,8 +49,10 @@ type SSHClient struct {
 // NewSSHClient creates a new SSH client connection
 func NewSSHClient(host string, port int, user string, auth SSHAuth) (*SSHClient, error) {
 	config := &ssh.ClientConfig{
-		User:            user,
-		Auth:            []ssh.AuthMethod{auth.AuthMethod()},
+		User: user,
+		Auth: []ssh.AuthMethod{auth.AuthMethod()},
+		// WARNING: InsecureIgnoreHostKey is used for development.
+		// In production, use known_hosts file or proper host key verification.
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
@@ -72,7 +76,11 @@ func (c *SSHClient) Execute(cmd string, stdout io.Writer, stderr io.Writer) erro
 	session.Stdout = stdout
 	session.Stderr = stderr
 
-	return session.Run(cmd)
+	err = session.Run(cmd)
+	if err != nil {
+		return fmt.Errorf("command '%s' failed: %w", cmd, err)
+	}
+	return nil
 }
 
 // Close closes the SSH client connection
