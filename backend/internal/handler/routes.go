@@ -1,28 +1,28 @@
 package handler
 
 import (
-	"database/sql"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/config"
 	"v2ray-dash/backend/internal/repository"
+	"v2ray-dash/backend/pkg/database"
 )
 
-func SetupRoutes(r *gin.Engine, db *sql.DB, cfg *config.Config) {
+func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 	// CORS
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
 		c.Next()
 	})
 
-	logRepo := repository.NewLogRepository(db)
+	logRepo := repository.NewLogRepository(db.DB)
 
 	// API 路由组
 	api := r.Group("/api")
 	{
 		// 服务器管理
-		serverHandler := NewServerHandler(db)
+		serverHandler := NewServerHandler(db.DB)
 		api.GET("/servers", serverHandler.List)
 		api.POST("/servers", serverHandler.Create)
 		api.GET("/servers/:id", serverHandler.Get)
@@ -30,7 +30,7 @@ func SetupRoutes(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 		api.DELETE("/servers/:id", serverHandler.Delete)
 
 		// 订阅管理
-		subHandler := NewSubscriptionHandler(db)
+		subHandler := NewSubscriptionHandler(db.DB)
 		api.GET("/subscriptions", subHandler.List)
 		api.POST("/subscriptions", subHandler.Create)
 		api.GET("/subscriptions/:id", subHandler.Get)

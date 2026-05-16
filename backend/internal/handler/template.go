@@ -1,20 +1,20 @@
 package handler
 
 import (
-	"database/sql"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
+	"v2ray-dash/backend/pkg/database"
 )
 
 type TemplateHandler struct {
 	repo *repository.TemplateRepository
 }
 
-func NewTemplateHandler(db *sql.DB) *TemplateHandler {
-	return &TemplateHandler{repo: repository.NewTemplateRepository(db)}
+func NewTemplateHandler(db *database.DB) *TemplateHandler {
+	return &TemplateHandler{repo: repository.NewTemplateRepository(db.DB)}
 }
 
 func (h *TemplateHandler) List(c *gin.Context) {
@@ -60,10 +60,6 @@ func (h *TemplateHandler) Create(c *gin.Context) {
 func (h *TemplateHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.repo.Delete(id); err != nil {
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
-			return
-		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
