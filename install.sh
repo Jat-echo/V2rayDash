@@ -483,6 +483,90 @@ parse_cli_args() {
     fi
 }
 
+# 预设模板映射
+declare -A TEMPLATE_MAP=(
+    ["minimal-reality"]="sing-box|,7,,|,0,,"
+    ["standard-reality"]="sing-box|,7,|,0,"
+    ["full-reality"]="sing-box|,7,|,0,|,8,|,6,|,9,"
+)
+
+# 加载模板配置
+load_template() {
+    local template_name="$1"
+    local template_spec="${TEMPLATE_MAP[${template_name}]}"
+
+    if [[ -z "${template_spec}" ]]; then
+        echoContent red "Unknown template: ${template_name}"
+        exit 1
+    fi
+
+    # 解析模板规格: core_type|protocol_types
+    local core_type=$(echo "${template_spec}" | cut -d'|' -f1)
+    local protocol_types=$(echo "${template_spec}" | cut -d'|' -f2-)
+
+    # 设置核心类型
+    if [[ "${core_type}" == "sing-box" ]]; then
+        selectCoreType=2
+        coreInstallType=2
+    else
+        selectCoreType=1
+        coreInstallType=1
+    fi
+
+    # 设置协议类型
+    selectCustomInstallType="${protocol_types}"
+}
+
+# 应用显式参数覆盖
+apply_explicit_args() {
+    # 端口
+    if [[ -n "${explicit_port}" ]]; then
+        singBoxVLESSRealityVisionPort="${explicit_port}"
+        singBoxVLESSVisionPort="${explicit_port}"
+    fi
+
+    # UUID
+    if [[ -n "${explicit_uuid}" ]]; then
+        currentUUID="${explicit_uuid}"
+    fi
+
+    # Reality目标域名
+    if [[ -n "${explicit_server_name}" ]]; then
+        realityServerName="${explicit_server_name}"
+    fi
+}
+
+# 如果指定了模板，加载模板配置
+if [[ "${template_mode}" == "true" && -n "${template_name}" ]]; then
+    load_template "${template_name}"
+fi
+
+# 如果指定了核心类型，覆盖模板设置
+if [[ -n "${explicit_core_type}" ]]; then
+    if [[ "${explicit_core_type}" == "sing-box" ]]; then
+        selectCoreType=2
+        coreInstallType=2
+    else
+        selectCoreType=1
+        coreInstallType=1
+    fi
+fi
+
+# 如果指定了协议，覆盖模板设置
+if [[ -n "${explicit_protocol}" ]]; then
+    case "${explicit_protocol}" in
+    vless_reality_vision)
+        selectCustomInstallType=",7,"
+        ;;
+    vless_tcp_vision)
+        selectCustomInstallType=",0,"
+        ;;
+    all)
+        selectCustomInstallType="all"
+        ;;
+    esac
+fi
+
 # 显示帮助信息
 show_help() {
     echoContent green "install.sh 帮助信息"
@@ -8704,6 +8788,7 @@ customXrayInstall() {
 
 # 选择核心安装sing-box、xray-core
 selectCoreInstall() {
+    apply_explicit_args
     echoContent skyBlue "\n功能 1/${totalProgress} : 选择核心安装"
     echoContent red "\n=============================================================="
     echoContent yellow "1.Xray-core"
