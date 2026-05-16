@@ -377,6 +377,11 @@ parse_cli_args() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+        --help)
+            show_help
+            exit 0
+            ;;
+
         # Agent模式
         --agent)
             agent_mode=true
@@ -385,25 +390,30 @@ parse_cli_args() {
 
         # 控制中心配置
         --url)
+            if [[ -z "$2" ]]; then echo "Error: --url requires a value"; exit 1; fi
             agent_control_center_url="$2"
             shift 2
             ;;
         --id)
+            if [[ -z "$2" ]]; then echo "Error: --id requires a value"; exit 1; fi
             agent_server_id="$2"
             shift 2
             ;;
         --psk)
+            if [[ -z "$2" ]]; then echo "Error: --psk requires a value"; exit 1; fi
             agent_psk="$2"
             shift 2
             ;;
 
         # 模板模式
         --template)
+            if [[ -z "$2" ]]; then echo "Error: --template requires a value"; exit 1; fi
             template_mode=true
             template_name="$2"
             shift 2
             ;;
         --config)
+            if [[ -z "$2" ]]; then echo "Error: --config requires a value"; exit 1; fi
             template_mode=true
             template_config="$2"
             shift 2
@@ -411,26 +421,33 @@ parse_cli_args() {
 
         # 核心和协议配置
         --core)
+            if [[ -z "$2" ]]; then echo "Error: --core requires a value"; exit 1; fi
             explicit_core_type="$2"
             shift 2
             ;;
         --protocol)
+            if [[ -z "$2" ]]; then echo "Error: --protocol requires a value"; exit 1; fi
             explicit_protocol="$2"
             shift 2
             ;;
         --port)
+            if [[ -z "$2" ]]; then echo "Error: --port requires a value"; exit 1; fi
             explicit_port="$2"
             shift 2
             ;;
         --uuid)
+            if [[ -z "$2" ]]; then echo "Error: --uuid requires a value"; exit 1; fi
             explicit_uuid="$2"
             shift 2
             ;;
         --server-name)
+            if [[ -z "$2" ]]; then echo "Error: --server-name requires a value"; exit 1; fi
             explicit_server_name="$2"
             shift 2
             ;;
         --template-name)
+            if [[ -z "$2" ]]; then echo "Error: --template-name requires a value"; exit 1; fi
+            template_mode=true
             template_name="$2"
             shift 2
             ;;
