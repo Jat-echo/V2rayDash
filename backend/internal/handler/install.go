@@ -5,16 +5,21 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"v2ray-dash/backend/internal/repository"
 	"v2ray-dash/backend/internal/service"
 	"v2ray-dash/backend/internal/ssh"
 )
 
 type InstallHandler struct {
-	scriptPath string
+	scriptPath  string
+	serverRepo  *repository.ServerRepository
 }
 
-func NewInstallHandler(scriptPath string) *InstallHandler {
-	return &InstallHandler{scriptPath: scriptPath}
+func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepository) *InstallHandler {
+	return &InstallHandler{
+		scriptPath: scriptPath,
+		serverRepo: serverRepo,
+	}
 }
 
 func (h *InstallHandler) StartInstall(c *gin.Context) {
@@ -24,43 +29,19 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 		return
 	}
 
-	// Parse request body for server credentials
-	var req struct {
-		IP          string `json:"ip"`
-		SSHPort     int    `json:"ssh_port"`
-		SSHUser     string `json:"ssh_user"`
-		SSHKeyType  string `json:"ssh_key_type"`
-		SSHKey      string `json:"ssh_key"`
-		SSHPassword string `json:"ssh_password"`
-		Template    string `json:"template"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 从数据库获取服务器信息
+	server, err := h.serverRepo.GetByID(serverID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
 		return
 	}
 
-	if req.IP == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "IP address is required"})
-		return
-	}
-
-	// Set defaults
-	if req.SSHPort == 0 {
-		req.SSHPort = 22
-	}
-	if req.SSHUser == "" {
-		req.SSHUser = "root"
-	}
-	if req.SSHKeyType == "" {
-		req.SSHKeyType = "key"
-	}
-
-	// Create SSH auth
+	// Create SSH auth based on stored credentials
 	var auth ssh.SSHAuth
-	if req.SSHKeyType == "password" {
-		auth = &ssh.PasswordAuth{Password: req.SSHPassword}
+	if server.SSHKeyType == "password" {
+		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
 	} else {
-		auth = &ssh.KeyAuth{PrivateKey: req.SSHKey}
+		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
 	}
 
 	// Set SSE headers
@@ -77,7 +58,7 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	}
 
 	// Create installer
-	installer := service.NewInstaller(serverID, req.IP, req.SSHPort, req.SSHUser, auth, h.scriptPath)
+	installer := service.NewInstaller(serverID, server.IP, server.SSHPort, server.SSHUser, auth, h.scriptPath)
 
 	// Execute installation (output streams directly to HTTP)
 	result := installer.Install(c.Writer)

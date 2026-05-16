@@ -52,7 +52,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		templateHandler.RegisterRoutes(api)
 
 		// 安装管理
-		installHandler := NewInstallHandler("/home/jat-id/Project/V2rayDash/install.sh")
+		installHandler := NewInstallHandler("/home/jat-id/Project/V2rayDash/install.sh", NewServerHandler(db.DB).repo)
 		api.POST("/servers/:id/install", installHandler.StartInstall)
 	}
 

@@ -8,7 +8,6 @@ export default function ServerList() {
   const [modalVisible, setModalVisible] = useState(false)
   const [installModalVisible, setInstallModalVisible] = useState(false)
   const [installOutput, setInstallOutput] = useState('')
-  const [eventSource, setEventSource] = useState<EventSource | null>(null)
   const [selectedServer, setSelectedServer] = useState<Server | null>(null)
   const [form] = Form.useForm()
   const [sshKeyType, setSshKeyType] = useState<string>('key')
@@ -16,14 +15,6 @@ export default function ServerList() {
   useEffect(() => {
     loadServers()
   }, [])
-
-  useEffect(() => {
-    return () => {
-      if (eventSource) {
-        eventSource.close()
-      }
-    }
-  }, [eventSource])
 
   const loadServers = async () => {
     setLoading(true)
@@ -65,33 +56,38 @@ export default function ServerList() {
     setInstallOutput('')
     setInstallModalVisible(true)
 
-    const es = new EventSource(`/api/servers/${server.id}/install`)
-    es.onmessage = (e) => {
-        setInstallOutput(prev => prev + e.data)
-    }
-    es.onerror = () => {
-        es.close()
-        setInstallOutput(prev => prev + '\n❌ 连接失败，请检查服务器状态\n')
-    }
-    setEventSource(es)
+    // Use fetch with POST to initiate SSE-like streaming
+    fetch(`/api/servers/${server.id}/install`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({})
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error('Connection failed')
+      }
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      const read = () => {
+        reader?.read().then(({ done, value }) => {
+          if (done) {
+            return
+          }
+          const chunk = decoder.decode(value, { stream: true })
+          setInstallOutput(prev => prev + chunk)
+          read()
+        })
+      }
+      read()
+    }).catch(() => {
+      setInstallOutput(prev => prev + '\n❌ 连接失败，请检查服务器状态\n')
+    })
   }
 
   const closeInstallModal = () => {
-    if (eventSource) {
-      eventSource.close()
-      setEventSource(null)
-    }
     setInstallModalVisible(false)
-  }
-
-  const copyOutput = () => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(installOutput).then(() => {
-        message.success('已复制到剪贴板')
-      }).catch(() => {
-        message.error('复制失败')
-      })
-    }
   }
 
   const columns = [
