@@ -46,6 +46,10 @@ func SetupRoutes(r *gin.Engine, db *sql.DB, cfg *config.Config) {
 		// 日志
 		logHandler := NewLogHandler(logRepo)
 		api.GET("/logs/operation", logHandler.ListOperationLogs)
+
+		// 模板管理
+		templateHandler := NewTemplateHandler(db)
+		templateHandler.RegisterRoutes(api)
 	}
 
 	// 健康检查

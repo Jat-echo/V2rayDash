@@ -56,3 +56,13 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_server_id ON subscriptions(server_i
 CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_node_status_server_id ON node_status(server_id);
 CREATE INDEX IF NOT EXISTS idx_node_status_reported_at ON node_status(reported_at);
+
+-- 模板表
+CREATE TABLE IF NOT EXISTS templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    config JSONB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
