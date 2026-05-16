@@ -18,7 +18,10 @@ func NewTemplateRepository(db *sql.DB) *TemplateRepository {
 }
 
 func (r *TemplateRepository) Create(tmpl *model.Template) error {
-	configJSON, _ := json.Marshal(tmpl.Config)
+	configJSON, err := json.Marshal(tmpl.Config)
+	if err != nil {
+		return err
+	}
 	result, err := r.db.Exec(
 		`INSERT INTO templates (name, description, config) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`,
 		tmpl.Name, tmpl.Description, configJSON,
