@@ -17,6 +17,14 @@ export default function ServerList() {
     loadServers()
   }, [])
 
+  useEffect(() => {
+    return () => {
+      if (eventSource) {
+        eventSource.close()
+      }
+    }
+  }, [eventSource])
+
   const loadServers = async () => {
     setLoading(true)
     try {
@@ -57,13 +65,13 @@ export default function ServerList() {
     setInstallOutput('')
     setInstallModalVisible(true)
 
-    // Create SSE connection
     const es = new EventSource(`/api/servers/${server.id}/install`)
     es.onmessage = (e) => {
-      setInstallOutput(prev => prev + e.data)
+        setInstallOutput(prev => prev + e.data)
     }
     es.onerror = () => {
-      es.close()
+        es.close()
+        setInstallOutput(prev => prev + '\n❌ 连接失败，请检查服务器状态\n')
     }
     setEventSource(es)
   }
@@ -77,8 +85,13 @@ export default function ServerList() {
   }
 
   const copyOutput = () => {
-    navigator.clipboard.writeText(installOutput)
-    message.success('已复制到剪贴板')
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(installOutput).then(() => {
+        message.success('已复制到剪贴板')
+      }).catch(() => {
+        message.error('复制失败')
+      })
+    }
   }
 
   const columns = [
