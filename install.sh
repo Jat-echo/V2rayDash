@@ -536,37 +536,6 @@ apply_explicit_args() {
     fi
 }
 
-# 如果指定了模板，加载模板配置
-if [[ "${template_mode}" == "true" && -n "${template_name}" ]]; then
-    load_template "${template_name}"
-fi
-
-# 如果指定了核心类型，覆盖模板设置
-if [[ -n "${explicit_core_type}" ]]; then
-    if [[ "${explicit_core_type}" == "sing-box" ]]; then
-        selectCoreType=2
-        coreInstallType=2
-    else
-        selectCoreType=1
-        coreInstallType=1
-    fi
-fi
-
-# 如果指定了协议，覆盖模板设置
-if [[ -n "${explicit_protocol}" ]]; then
-    case "${explicit_protocol}" in
-    vless_reality_vision)
-        selectCustomInstallType=",7,"
-        ;;
-    vless_tcp_vision)
-        selectCustomInstallType=",0,"
-        ;;
-    all)
-        selectCustomInstallType="all"
-        ;;
-    esac
-fi
-
 # 显示帮助信息
 show_help() {
     echoContent green "install.sh 帮助信息"
@@ -10312,7 +10281,44 @@ menu() {
 }
 cronFunction
 
+# 处理模板参数（在解析命令行参数之后调用）
+process_template_args() {
+    # 如果指定了模板，加载模板配置
+    if [[ "${template_mode}" == "true" && -n "${template_name}" ]]; then
+        load_template "${template_name}"
+    fi
+
+    # 如果指定了核心类型，覆盖模板设置
+    if [[ -n "${explicit_core_type}" ]]; then
+        if [[ "${explicit_core_type}" == "sing-box" ]]; then
+            selectCoreType=2
+            coreInstallType=2
+        else
+            selectCoreType=1
+            coreInstallType=1
+        fi
+    fi
+
+    # 如果指定了协议，覆盖模板设置
+    if [[ -n "${explicit_protocol}" ]]; then
+        case "${explicit_protocol}" in
+        vless_reality_vision)
+            selectCustomInstallType=",7,"
+            ;;
+        vless_tcp_vision)
+            selectCustomInstallType=",0,"
+            ;;
+        all)
+            selectCustomInstallType="all"
+            ;;
+        esac
+    fi
+}
+
 # 解析命令行参数
 parse_cli_args "$@"
+
+# 应用模板参数
+process_template_args
 
 menu
