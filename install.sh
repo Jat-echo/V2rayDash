@@ -485,9 +485,9 @@ parse_cli_args() {
 
 # 预设模板映射
 declare -A TEMPLATE_MAP=(
-    ["minimal-reality"]="sing-box|,7,,|,0,,"
-    ["standard-reality"]="sing-box|,7,|,0,"
-    ["full-reality"]="sing-box|,7,|,0,|,8,|,6,|,9,"
+    ["minimal-reality"]="sing-box|0,"
+    ["standard-reality"]="sing-box|0,7,"
+    ["full-reality"]="sing-box|0,7,8,6,9,"
 )
 
 # 加载模板配置
@@ -502,7 +502,7 @@ load_template() {
 
     # 解析模板规格: core_type|protocol_types
     local core_type=$(echo "${template_spec}" | cut -d'|' -f1)
-    local protocol_types=$(echo "${template_spec}" | cut -d'|' -f2-)
+    local protocol_types=$(echo "${template_spec}" | cut -d'|' -f2)
 
     # 设置核心类型
     if [[ "${core_type}" == "sing-box" ]]; then
