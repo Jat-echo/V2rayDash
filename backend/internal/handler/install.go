@@ -19,6 +19,10 @@ func NewInstallHandler(scriptPath string) *InstallHandler {
 
 func (h *InstallHandler) StartInstall(c *gin.Context) {
 	serverID := c.Param("id")
+	if serverID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "server ID is required"})
+		return
+	}
 
 	// Parse request body for server credentials
 	var req struct {
@@ -32,6 +36,11 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.IP == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "IP address is required"})
 		return
 	}
 
