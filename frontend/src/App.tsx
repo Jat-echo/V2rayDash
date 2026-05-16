@@ -4,6 +4,7 @@ import ServerList from './pages/servers'
 import SubscriptionList from './pages/subscriptions'
 import Monitor from './pages/monitor'
 import Logs from './pages/logs'
+import TemplateList from './pages/templates'
 
 const { Header, Content } = Layout
 
@@ -21,6 +22,7 @@ function App() {
             <Route path="/subscriptions" element={<SubscriptionList />} />
             <Route path="/monitor" element={<Monitor />} />
             <Route path="/logs" element={<Logs />} />
+            <Route path="/templates" element={<TemplateList />} />
           </Routes>
         </Content>
       </Layout>
