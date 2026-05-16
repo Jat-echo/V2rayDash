@@ -50,6 +50,10 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		// 模板管理
 		templateHandler := NewTemplateHandler(db)
 		templateHandler.RegisterRoutes(api)
+
+		// 安装管理
+		installHandler := NewInstallHandler("/home/jat-id/Project/V2rayDash/install.sh")
+		api.POST("/servers/:id/install", installHandler.StartInstall)
 	}
 
 	// 健康检查
