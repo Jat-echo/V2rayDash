@@ -20,6 +20,7 @@ type Installer struct {
 	user       string
 	auth       ssh.SSHAuth
 	scriptPath string
+	timeout    time.Duration
 }
 
 func NewInstaller(serverID, host string, port int, user string, auth ssh.SSHAuth, scriptPath string) *Installer {
@@ -30,6 +31,7 @@ func NewInstaller(serverID, host string, port int, user string, auth ssh.SSHAuth
 		user:       user,
 		auth:       auth,
 		scriptPath: scriptPath,
+		timeout:    10 * time.Minute,
 	}
 }
 
@@ -49,7 +51,11 @@ func (i *Installer) Install(output io.Writer) *InstallResult {
 	if err != nil {
 		return &InstallResult{Success: false, Error: fmt.Sprintf("SFTP连接失败: %v", err)}
 	}
-	defer sftpClient.Close()
+	defer func() {
+		if sftpClient != nil {
+			sftpClient.Close()
+		}
+	}()
 
 	remotePath := "/tmp/v2ray_install.sh"
 	if err := sftpClient.UploadFile(i.scriptPath, remotePath); err != nil {
