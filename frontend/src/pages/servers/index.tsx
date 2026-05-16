@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm } from 'antd'
 import { serverAPI, Server } from '../../services/api'
 
 export default function ServerList() {
   const [servers, setServers] = useState<Server[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
+  const [installModalVisible, setInstallModalVisible] = useState(false)
+  const [selectedServer, setSelectedServer] = useState<Server | null>(null)
   const [form] = Form.useForm()
   const [sshKeyType, setSshKeyType] = useState<string>('key')
+  const [installCommand, setInstallCommand] = useState('')
 
   useEffect(() => {
     loadServers()
@@ -48,6 +51,27 @@ export default function ServerList() {
     }
   }
 
+  const handleInstall = (server: Server) => {
+    setSelectedServer(server)
+    // 生成安装命令（示例）
+    const serverId = server.id
+    const psk = btoa(Math.random().toString()).slice(0, 32)
+    const baseURL = window.location.origin
+    const cmd = `curl -sL ${baseURL}/install.sh | bash -s -- \\
+  --agent \\
+  --template standard-reality \\
+  --url ${baseURL} \\
+  --id ${serverId} \\
+  --psk ${psk}`
+    setInstallCommand(cmd)
+    setInstallModalVisible(true)
+  }
+
+  const copyCommand = () => {
+    navigator.clipboard.writeText(installCommand)
+    message.success('已复制到剪贴板')
+  }
+
   const columns = [
     { title: '名称', dataIndex: 'name' },
     { title: 'IP', dataIndex: 'ip' },
@@ -59,8 +83,10 @@ export default function ServerList() {
       title: '操作',
       render: (_: any, record: Server) => (
         <Space>
-          <Button size="small">安装</Button>
-          <Button size="small" danger onClick={() => handleDelete(record.id)}>删除</Button>
+          <Button size="small" type="primary" onClick={() => handleInstall(record)}>安装</Button>
+          <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
+            <Button size="small" danger>删除</Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -114,6 +140,25 @@ export default function ServerList() {
           )}
           <Button type="primary" htmlType="submit">提交</Button>
         </Form>
+      </Modal>
+
+      <Modal
+        title={`安装 v2ray 到 ${selectedServer?.name || ''}`}
+        open={installModalVisible}
+        onCancel={() => setInstallModalVisible(false)}
+        footer={[
+          <Button key="copy" type="primary" onClick={copyCommand}>
+            复制命令
+          </Button>,
+          <Button key="close" onClick={() => setInstallModalVisible(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <p>在服务器上执行以下命令完成安装：</p>
+        <pre style={{ background: '#f5f5f5', padding: 16, borderRadius: 4, overflow: 'auto' }}>
+          {installCommand}
+        </pre>
       </Modal>
     </div>
   )
