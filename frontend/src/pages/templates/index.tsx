@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Popconfirm } from 'antd'
-import { CopyOutlined, PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons'
+import { CopyOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 
 interface Template {
   id: string
@@ -37,16 +37,26 @@ export default function TemplateList() {
   const [form] = Form.useForm()
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
   const [installCommand, setInstallCommand] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [serverId, setServerId] = useState('')
+  const [psk, setPsk] = useState('')
 
   useEffect(() => {
     loadTemplates()
+    setServerId(crypto.randomUUID())
+    const array = new Uint8Array(24)
+    crypto.getRandomValues(array)
+    setPsk(btoa(String.fromCharCode(...array)).slice(0, 32))
   }, [])
 
   const loadTemplates = async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/templates')
+      if (!res.ok) {
+        message.error('加载失败')
+        setLoading(false)
+        return
+      }
       const data = await res.json()
       setTemplates(data)
     } catch (e) {
@@ -57,35 +67,12 @@ export default function TemplateList() {
   }
 
   const handleAdd = () => {
-    setEditingId(null)
     form.resetFields()
-    setModalVisible(true)
-  }
-
-  const handleEdit = (record: Template) => {
-    setEditingId(record.id)
-    form.setFieldsValue({
-      name: record.name,
-      description: record.description,
-      config: {
-        core: record.config.core || 'sing-box',
-        port: record.config.port || 443,
-        server_name: record.config.server_name || 'download-installer.cdn.mozilla.net',
-        protocols: record.config.protocols || [],
-        agent_enabled: record.config.agent_enabled ?? true,
-        report_interval: record.config.report_interval || 30,
-      },
-    })
     setModalVisible(true)
   }
 
   const handleSubmit = async (values: any) => {
     try {
-      if (editingId) {
-        // Update not implemented yet - could add later
-        message.info('编辑功能暂未实现')
-        return
-      }
       await fetch('/api/templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -110,22 +97,20 @@ export default function TemplateList() {
     }
   }
 
-  const generateInstallCommand = (template: Template) => {
-    const serverId = crypto.randomUUID()
-    const psk = btoa(Math.random().toString()).slice(0, 32)
+  const generateInstallCommand = (template: Template, sid: string, pskVal: string) => {
     const baseURL = window.location.origin
     const templateName = template.name.toLowerCase().replace(/\s+/g, '-')
     return `curl -sL ${baseURL}/install.sh | bash -s -- \\
   --agent \\
   --template ${templateName} \\
   --url ${baseURL} \\
-  --id ${serverId} \\
-  --psk ${psk}`
+  --id ${sid} \\
+  --psk ${pskVal}`
   }
 
   const handleGenerateCommand = (template: Template) => {
     setSelectedTemplate(template)
-    setInstallCommand(generateInstallCommand(template))
+    setInstallCommand(generateInstallCommand(template, serverId, psk))
     setCommandModalVisible(true)
   }
 
@@ -145,7 +130,6 @@ export default function TemplateList() {
       key: 'action',
       render: (_: any, record: Template) => (
         <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>编辑</Button>
           <Button size="small" type="primary" onClick={() => handleGenerateCommand(record)}>生成命令</Button>
           <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
@@ -164,7 +148,7 @@ export default function TemplateList() {
       <Table columns={columns} dataSource={templates} rowKey="id" loading={loading} />
 
       <Modal
-        title={editingId ? '编辑模板' : '新建模板'}
+        title="新建模板"
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={null}
