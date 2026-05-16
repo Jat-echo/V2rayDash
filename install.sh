@@ -10293,6 +10293,10 @@ install_agent() {
     # 下载 Agent 二进制
     local agent_url="${agent_control_center_url}/agents/latest/linux_$(uname -m)/agent"
     local agent_bin="/usr/local/bin/v2ray-agent"
+    local report_interval=30
+    if [[ -n "${explicit_report_interval}" ]]; then
+        report_interval="${explicit_report_interval}"
+    fi
 
     echoContent green " ---> 下载Agent: ${agent_url}"
     wget -q -O "${agent_bin}" "${agent_url}" || {
@@ -10301,8 +10305,20 @@ install_agent() {
     }
     chmod +x "${agent_bin}"
 
+    # 验证二进制文件
+    if [[ ! -s "${agent_bin}" ]]; then
+        echoContent red " ---> Agent二进制文件无效"
+        exit 1
+    fi
+
     # 创建配置目录
     mkdir -p /etc/v2ray-agent
+
+    # 验证配置值不包含会破坏JSON的字符
+    if [[ "${agent_psk}" =~ [\"\\] ]] || [[ "${agent_server_id}" =~ [\"\\] ]]; then
+        echoContent red " ---> 配置值包含无效字符"
+        exit 1
+    fi
 
     # 生成配置文件
     cat > /etc/v2ray-agent/agent.json <<EOF
@@ -10310,7 +10326,7 @@ install_agent() {
     "server_id": "${agent_server_id}",
     "control_center_url": "${agent_control_center_url}",
     "psk": "${agent_psk}",
-    "report_interval": 30
+    "report_interval": ${report_interval}
 }
 EOF
 
@@ -10334,8 +10350,15 @@ EOF
     systemctl enable v2ray-agent
     systemctl start v2ray-agent
 
+    if systemctl is-active v2ray-agent > /dev/null 2>&1; then
+        echoContent green " ---> Agent服务启动成功"
+    else
+        echoContent red " ---> Agent服务启动失败"
+        exit 1
+    fi
+
     echoContent green " ---> Agent安装完成"
-    echoContent yellow " ---> 上报间隔: 30秒"
+    echoContent yellow " ---> 上报间隔: ${report_interval}秒"
     echoContent yellow " ---> 控制中心: ${agent_control_center_url}"
 }
 
