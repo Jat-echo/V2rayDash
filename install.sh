@@ -8660,6 +8660,11 @@ installSingBoxReality() {
     # 生成账号
     checkGFWStatue 5
     showAccounts 6
+
+    # 如果是agent模式，安装agent
+    if [[ "${agent_mode}" == "true" ]]; then
+        install_agent
+    fi
 }
 # Xray-core个性化安装
 customXrayInstall() {
@@ -10280,6 +10285,59 @@ menu() {
     esac
 }
 cronFunction
+
+# 安装 Agent
+install_agent() {
+    echoContent skyBlue "\n进度 X/Y : 安装Agent"
+
+    # 下载 Agent 二进制
+    local agent_url="${agent_control_center_url}/agents/latest/linux_$(uname -m)/agent"
+    local agent_bin="/usr/local/bin/v2ray-agent"
+
+    echoContent green " ---> 下载Agent: ${agent_url}"
+    wget -q -O "${agent_bin}" "${agent_url}" || {
+        echoContent red " ---> Agent下载失败"
+        exit 1
+    }
+    chmod +x "${agent_bin}"
+
+    # 创建配置目录
+    mkdir -p /etc/v2ray-agent
+
+    # 生成配置文件
+    cat > /etc/v2ray-agent/agent.json <<EOF
+{
+    "server_id": "${agent_server_id}",
+    "control_center_url": "${agent_control_center_url}",
+    "psk": "${agent_psk}",
+    "report_interval": 30
+}
+EOF
+
+    # 创建 systemd 服务
+    cat > /etc/systemd/system/v2ray-agent.service <<EOF
+[Unit]
+Description=V2ray Agent
+After=network.target
+
+[Service]
+ExecStart=${agent_bin} -config /etc/v2ray-agent/agent.json
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # 启动服务
+    systemctl daemon-reload
+    systemctl enable v2ray-agent
+    systemctl start v2ray-agent
+
+    echoContent green " ---> Agent安装完成"
+    echoContent yellow " ---> 上报间隔: 30秒"
+    echoContent yellow " ---> 控制中心: ${agent_control_center_url}"
+}
 
 # 处理模板参数（在解析命令行参数之后调用）
 process_template_args() {
