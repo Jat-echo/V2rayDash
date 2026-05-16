@@ -351,6 +351,139 @@ readAcmeTLS() {
     fi
 }
 
+# 配置模板模式
+template_mode=false
+template_name=""
+template_config=""
+
+# Agent 配置
+agent_mode=false
+agent_server_id=""
+agent_control_center_url=""
+agent_psk=""
+
+# 显式参数
+explicit_core_type=""
+explicit_protocol=""
+explicit_port=""
+explicit_uuid=""
+explicit_server_name=""
+
+# 解析命令行参数
+parse_cli_args() {
+    if [[ $# -eq 0 ]]; then
+        return
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+        # Agent模式
+        --agent)
+            agent_mode=true
+            shift
+            ;;
+
+        # 控制中心配置
+        --url)
+            agent_control_center_url="$2"
+            shift 2
+            ;;
+        --id)
+            agent_server_id="$2"
+            shift 2
+            ;;
+        --psk)
+            agent_psk="$2"
+            shift 2
+            ;;
+
+        # 模板模式
+        --template)
+            template_mode=true
+            template_name="$2"
+            shift 2
+            ;;
+        --config)
+            template_mode=true
+            template_config="$2"
+            shift 2
+            ;;
+
+        # 核心和协议配置
+        --core)
+            explicit_core_type="$2"
+            shift 2
+            ;;
+        --protocol)
+            explicit_protocol="$2"
+            shift 2
+            ;;
+        --port)
+            explicit_port="$2"
+            shift 2
+            ;;
+        --uuid)
+            explicit_uuid="$2"
+            shift 2
+            ;;
+        --server-name)
+            explicit_server_name="$2"
+            shift 2
+            ;;
+        --template-name)
+            template_name="$2"
+            shift 2
+            ;;
+
+        # 兼容旧参数
+        -a|--auto)
+            template_mode=true
+            template_name="standard"
+            shift
+            ;;
+
+        *)
+            echo "Unknown option: $1"
+            shift
+            ;;
+        esac
+    done
+
+    # Agent模式校验
+    if [[ "${agent_mode}" == "true" ]]; then
+        if [[ -z "${agent_control_center_url}" ]]; then
+            echoContent red "Error: --url required for agent mode"
+            exit 1
+        fi
+        if [[ -z "${agent_server_id}" ]]; then
+            echoContent red "Error: --id required for agent mode"
+            exit 1
+        fi
+        if [[ -z "${agent_psk}" || "${agent_psk}" == "auto" ]]; then
+            # 自动生成PSK
+            agent_psk=$(openssl rand -base64 32)
+        fi
+    fi
+}
+
+# 显示帮助信息
+show_help() {
+    echoContent green "install.sh 帮助信息"
+    echoContent yellow "用法: curl -sL https://xxx/install.sh | bash -s -- [选项]"
+    echo
+    echoContent yellow "选项:"
+    echoContent yellow "  --agent                    启用Agent安装模式"
+    echoContent yellow "  --url <url>                控制中心地址"
+    echoContent yellow "  --id <uuid>                服务器ID"
+    echoContent yellow "  --psk <key>                PSK密钥 (auto=自动生成)"
+    echoContent yellow "  --template <name>          使用预设模板"
+    echoContent yellow "  --core <type>              核心类型 (sing-box/xray-core)"
+    echoContent yellow "  --protocol <type>          协议类型"
+    echoContent yellow "  --port <port>              端口"
+    echoContent yellow "  --uuid <uuid>              自定义UUID"
+    echoContent yellow "  --server-name <domain>     Reality目标域名"
+}
+
 # 读取默认自定义端口
 readCustomPort() {
     if [[ -n "${configPath}" && -z "${realityStatus}" && "${coreInstallType}" == "1" ]]; then
@@ -10076,4 +10209,8 @@ menu() {
     esac
 }
 cronFunction
+
+# 解析命令行参数
+parse_cli_args "$@"
+
 menu
