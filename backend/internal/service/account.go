@@ -189,6 +189,7 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 	}
 
 	var accounts []*model.Account
+	var failed int
 	for _, inbound := range config.Inbounds {
 		for _, client := range inbound.Settings.Clients {
 			account, err := s.accountRepo.Create(&model.CreateAccountRequest{
@@ -197,10 +198,16 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 				Email:     client.Email,
 				Protocols: []string{"vless_tcp"},
 			})
-			if err == nil {
-				accounts = append(accounts, account)
+			if err != nil {
+				failed++
+				continue
 			}
+			accounts = append(accounts, account)
 		}
+	}
+
+	if failed > 0 {
+		return accounts, fmt.Errorf("failed to import %d account(s)", failed)
 	}
 
 	return accounts, nil

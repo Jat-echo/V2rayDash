@@ -170,7 +170,7 @@ func (h *AccountHandler) Import(c *gin.Context) {
 
 	accounts, err := h.accountSvc.ImportFromRemote(serverID, auth)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to import accounts"})
 		return
 	}
 
