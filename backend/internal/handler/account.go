@@ -47,7 +47,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 	serverID := c.Param("id")
 	accounts, err := h.accountRepo.ListByServerID(serverID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	c.JSON(http.StatusOK, accounts)
@@ -61,7 +61,7 @@ func (h *AccountHandler) Get(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	c.JSON(http.StatusOK, account)
@@ -78,7 +78,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 
 	account, err := h.accountRepo.Create(&req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	c.JSON(http.StatusCreated, account)
@@ -93,7 +93,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	}
 
 	if err := h.accountRepo.Update(id, &req); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -102,7 +102,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 func (h *AccountHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.accountRepo.Delete(id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -123,16 +123,25 @@ func (h *AccountHandler) Subscribe(c *gin.Context) {
 
 	server, err := h.serverRepo.GetByID(account.ServerID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
 
 	var content string
+	var subErr error
 	switch subType {
 	case "clash_meta":
-		content, _ = h.accountSvc.GenerateClashMetaSubscription([]*model.Account{account}, server.IP)
+		content, subErr = h.accountSvc.GenerateClashMetaSubscription([]*model.Account{account}, server.IP)
 	default:
 		content = h.accountSvc.GenerateVLESSSubscription([]*model.Account{account}, server.IP)
+	}
+	if subErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
 	}
 
 	c.Header("Content-Type", "text/plain; charset=utf-8")
