@@ -91,10 +91,16 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 	if err != nil {
 		return err
 	}
+	if account == nil {
+		return fmt.Errorf("account not found: %s", accountID)
+	}
 
 	server, err := s.serverRepo.GetByID(account.ServerID)
 	if err != nil {
 		return err
+	}
+	if server == nil {
+		return fmt.Errorf("server not found: %s", account.ServerID)
 	}
 
 	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
@@ -131,7 +137,10 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 		},
 	}
 
-	data, _ := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
 
 	// Write config to temp file and upload via SFTP
 	tmpFile := "/tmp/v2ray_config_" + accountID + ".json"
@@ -139,6 +148,7 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 	if err != nil {
 		return fmt.Errorf("failed to write temp config: %w", err)
 	}
+	defer os.Remove(tmpFile)
 
 	return sftpClient.UploadFile(tmpFile, "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json")
 }
