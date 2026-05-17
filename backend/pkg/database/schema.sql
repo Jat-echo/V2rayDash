@@ -68,3 +68,29 @@ CREATE TABLE IF NOT EXISTS templates (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 账号表
+CREATE TABLE IF NOT EXISTS accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    uuid VARCHAR(64) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    protocols TEXT[] NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    traffic_limit BIGINT DEFAULT 0,
+    traffic_used BIGINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 订阅记录表（可选，用于追踪）
+CREATE TABLE IF NOT EXISTS subscriptions_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    sub_type VARCHAR(50) NOT NULL,
+    sub_link TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounts_server_id ON accounts(server_id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_records_account_id ON subscriptions_records(account_id);
