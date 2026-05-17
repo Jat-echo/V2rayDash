@@ -29,6 +29,10 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.PUT("/servers/:id", serverHandler.Update)
 		api.DELETE("/servers/:id", serverHandler.Delete)
 
+		// 账号管理
+		accountHandler := NewAccountHandler(db.DB)
+		accountHandler.RegisterRoutes(api)
+
 		// 订阅管理
 		subHandler := NewSubscriptionHandler(db.DB)
 		api.GET("/subscriptions", subHandler.List)
