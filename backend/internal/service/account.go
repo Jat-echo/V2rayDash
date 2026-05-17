@@ -152,3 +152,56 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 
 	return sftpClient.UploadFile(tmpFile, "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json")
 }
+
+// ImportFromRemote 从远程服务器导入账号
+func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]*model.Account, error) {
+	server, err := s.serverRepo.GetByID(serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	// 读取 Xray 配置文件
+	content, err := client.ReadRemoteFile("/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read remote config: %w", err)
+	}
+
+	// 解析 JSON 提取 users
+	var config struct {
+		Inbounds []struct {
+			Settings struct {
+				Clients []struct {
+					ID    string `json:"id"`
+					Email string `json:"email"`
+				} `json:"clients"`
+			} `json:"settings"`
+		} `json:"inbounds"`
+	}
+
+	if err := json.Unmarshal([]byte(content), &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	var accounts []*model.Account
+	for _, inbound := range config.Inbounds {
+		for _, client := range inbound.Settings.Clients {
+			account, err := s.accountRepo.Create(&model.CreateAccountRequest{
+				ServerID:  serverID,
+				UUID:      client.ID,
+				Email:     client.Email,
+				Protocols: []string{"vless_tcp"},
+			})
+			if err == nil {
+				accounts = append(accounts, account)
+			}
+		}
+	}
+
+	return accounts, nil
+}

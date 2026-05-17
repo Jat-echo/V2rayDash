@@ -3,6 +3,7 @@ package ssh
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -37,6 +38,9 @@ type PasswordAuth struct {
 }
 
 func (a *PasswordAuth) AuthMethod() ssh.AuthMethod {
+	if a.Password == "" {
+		return nil
+	}
 	return ssh.Password(a.Password)
 }
 
@@ -47,12 +51,16 @@ type SSHClient struct {
 
 // NewSSHClient creates a new SSH client connection
 func NewSSHClient(host string, port int, user string, auth SSHAuth) (*SSHClient, error) {
+	authMethod := auth.AuthMethod()
+	if authMethod == nil {
+		return nil, fmt.Errorf("ssh authentication method is invalid (check credentials)")
+	}
+
 	config := &ssh.ClientConfig{
 		User: user,
-		Auth: []ssh.AuthMethod{auth.AuthMethod()},
-		// WARNING: InsecureIgnoreHostKey is used for development.
-		// In production, use known_hosts file or proper host key verification.
+		Auth: []ssh.AuthMethod{authMethod},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout: 10 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
@@ -80,6 +88,28 @@ func (c *SSHClient) Execute(cmd string, stdout io.Writer, stderr io.Writer) erro
 		return fmt.Errorf("command '%s' failed: %w", cmd, err)
 	}
 	return nil
+}
+
+// ReadRemoteFile reads a file from the remote server via SFTP
+func (c *SSHClient) ReadRemoteFile(path string) (string, error) {
+	sftpClient, err := NewSFTPClient(c)
+	if err != nil {
+		return "", fmt.Errorf("failed to create sftp client: %w", err)
+	}
+	defer sftpClient.Close()
+
+	file, err := sftpClient.client.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to open remote file: %w", err)
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return "", fmt.Errorf("failed to read remote file: %w", err)
+	}
+
+	return string(content), nil
 }
 
 // Close closes the SSH client connection

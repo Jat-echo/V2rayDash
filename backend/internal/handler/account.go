@@ -8,6 +8,7 @@ import (
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
 	"v2ray-dash/backend/internal/service"
+	"v2ray-dash/backend/internal/ssh"
 )
 
 type AccountHandler struct {
@@ -32,6 +33,7 @@ func (h *AccountHandler) RegisterRoutes(r *gin.RouterGroup) {
 	{
 		accounts.GET("", h.List)
 		accounts.POST("", h.Create)
+		accounts.POST("/import", h.Import)
 	}
 
 	accountRoutes := r.Group("/accounts")
@@ -146,4 +148,34 @@ func (h *AccountHandler) Subscribe(c *gin.Context) {
 
 	c.Header("Content-Type", "text/plain; charset=utf-8")
 	c.String(http.StatusOK, content)
+}
+
+func (h *AccountHandler) Import(c *gin.Context) {
+	serverID := c.Param("id")
+
+	// 获取服务器信息以便创建 SSH 连接
+	server, err := h.serverRepo.GetByID(serverID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
+		return
+	}
+
+	// 根据认证类型创建 auth
+	var auth ssh.SSHAuth
+	if server.SSHKeyType == "password" {
+		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+	} else {
+		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+	}
+
+	accounts, err := h.accountSvc.ImportFromRemote(serverID, auth)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "imported",
+		"accounts": accounts,
+	})
 }
