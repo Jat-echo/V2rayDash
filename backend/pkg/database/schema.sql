@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS templates (
 CREATE TABLE IF NOT EXISTS accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-    uuid VARCHAR(64) NOT NULL,
+    uuid VARCHAR(64) NOT NULL UNIQUE,
     email VARCHAR(255) NOT NULL,
     protocols TEXT[] NOT NULL,
     enabled BOOLEAN DEFAULT true,
