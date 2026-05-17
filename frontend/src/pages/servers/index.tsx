@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Drawer } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag } from 'antd'
 import { serverAPI, templateAPI, accountAPI, Server, Template, TemplateConfig, Account } from '../../services/api'
 
 // Convert ANSI escape codes to HTML with colors
@@ -424,7 +424,7 @@ export default function ServerList() {
       >
         <div style={{ marginBottom: 16 }}>
           <Space>
-            <Button type="primary" onClick={() => addAccountForm.resetFields()}>添加账号</Button>
+            <Button type="primary" onClick={() => addAccountForm.resetFields()}>清空</Button>
           </Space>
         </div>
 
