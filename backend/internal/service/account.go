@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"v2ray-dash/backend/internal/model"
@@ -30,7 +31,8 @@ func (s *AccountService) GetAccountLink(account *model.Account, serverIP string,
 		link = fmt.Sprintf("vless://%s@%s:443?encryption=none&flow=xtls-rprx-vision&security=tls&sni=%s#%s",
 			account.UUID, serverIP, serverIP, account.Email)
 	case "clash_meta":
-		link = fmt.Sprintf("clash://%s@%s:443", account.UUID, serverIP)
+		// Placeholder link for Clash Meta - not used for subscription generation
+		link = fmt.Sprintf("clash://%s@%s:7890", account.UUID, serverIP)
 	default:
 		link = fmt.Sprintf("vless://%s@%s:443", account.UUID, serverIP)
 	}
@@ -44,13 +46,9 @@ func (s *AccountService) GenerateVLESSSubscription(accounts []*model.Account, se
 		if !acc.Enabled {
 			continue
 		}
-		for _, proto := range acc.Protocols {
-			link := s.GetAccountLink(acc, serverIP, "vless")
-			if strings.Contains(proto, "reality") {
-				link = strings.Replace(link, "tls", "reality", 1)
-			}
-			lines = append(lines, link)
-		}
+		// Generate standard VLESS URIs without reality transformation
+		link := s.GetAccountLink(acc, serverIP, "vless")
+		lines = append(lines, link)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -62,27 +60,19 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 		if !acc.Enabled {
 			continue
 		}
-		for _, proto := range acc.Protocols {
-			proxy := map[string]interface{}{
-				"name": acc.Email,
-				"type": "vless",
-				"server": serverIP,
-				"port": 443,
-				"uuid": acc.UUID,
-				"flow": "xtls-rprx-vision",
-				"tls": true,
-			}
-			if strings.Contains(proto, "reality") {
-				proxy["tls"] = map[string]interface{}{
-					"enabled": true,
-					"serverName": serverIP,
-					"reality": map[string]interface{}{
-						"enabled": true,
-					},
-				}
-			}
-			proxies = append(proxies, proxy)
+		proxy := map[string]interface{}{
+			"name": acc.Email,
+			"type": "vless",
+			"server": serverIP,
+			"port": 443,
+			"uuid": acc.UUID,
+			"flow": "xtls-rprx-vision",
+			"tls": map[string]interface{}{
+				"enabled": true,
+				"serverName": serverIP,
+			},
 		}
+		proxies = append(proxies, proxy)
 	}
 
 	config := map[string]interface{}{
@@ -113,6 +103,13 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 	}
 	defer client.Close()
 
+	// Create SFTP client for file upload
+	sftpClient, err := ssh.NewSFTPClient(client)
+	if err != nil {
+		return err
+	}
+	defer sftpClient.Close()
+
 	// 生成配置文件内容
 	config := map[string]interface{}{
 		"log": map[string]interface{}{
@@ -135,5 +132,13 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 	}
 
 	data, _ := json.MarshalIndent(config, "", "  ")
-	return client.UploadConfig("/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json", string(data))
+
+	// Write config to temp file and upload via SFTP
+	tmpFile := "/tmp/v2ray_config_" + accountID + ".json"
+	err = os.WriteFile(tmpFile, data, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write temp config: %w", err)
+	}
+
+	return sftpClient.UploadFile(tmpFile, "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json")
 }
