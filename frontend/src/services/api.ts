@@ -29,6 +29,32 @@ export interface Subscription {
   updated_at: string
 }
 
+export interface Account {
+  id: string
+  server_id: string
+  uuid: string
+  email: string
+  protocols: string[]
+  enabled: boolean
+  traffic_limit: number
+  traffic_used: number
+  created_at: string
+  updated_at: string
+}
+
+export const accountAPI = {
+  listByServer: (serverId: string) =>
+    api.get<Account[]>(`/servers/${serverId}/accounts`).then(r => r.data),
+  get: (id: string) => api.get<Account>(`/accounts/${id}`).then(r => r.data),
+  create: (serverId: string, data: Partial<Account>) =>
+    api.post<Account>(`/servers/${serverId}/accounts`, data).then(r => r.data),
+  update: (id: string, data: Partial<Account>) =>
+    api.put(`/accounts/${id}`, data),
+  delete: (id: string) => api.delete(`/accounts/${id}`),
+  subscribe: (id: string, type?: string) =>
+    api.get(`/accounts/${id}/subscribe`, { params: { type } }).then(r => r.data),
+}
+
 export interface OperationLog {
   id: string
   operator: string
@@ -38,6 +64,25 @@ export interface OperationLog {
   detail: Record<string, any>
   ip: string
   created_at: string
+}
+
+export interface Template {
+  id: number
+  name: string
+  description: string
+  config: TemplateConfig
+  created_at: string
+  updated_at: string
+}
+
+export interface TemplateConfig {
+  core: string
+  port: number
+  uuid: string
+  server_name: string
+  protocols: string[]
+  agent_enabled: boolean
+  report_interval: number
 }
 
 export const serverAPI = {
@@ -56,6 +101,13 @@ export const subscriptionAPI = {
   create: (data: Partial<Subscription>) => api.post<Subscription>('/subscriptions', data).then(r => r.data),
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   getLink: (id: string) => api.get<{ link: string; encoded: string }>(`/subscriptions/${id}/link`).then(r => r.data),
+}
+
+export const templateAPI = {
+  list: () => api.get<Template[]>('/templates').then(r => r.data),
+  create: (data: { name: string; description: string; config: TemplateConfig }) =>
+    api.post<Template>('/templates', data).then(r => r.data),
+  delete: (id: number) => api.delete(`/templates/${id}`),
 }
 
 export const logAPI = {
