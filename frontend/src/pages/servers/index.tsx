@@ -1,19 +1,77 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm } from 'antd'
-import { serverAPI, Server } from '../../services/api'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Drawer } from 'antd'
+import { serverAPI, templateAPI, accountAPI, Server, Template, TemplateConfig, Account } from '../../services/api'
+
+// Convert ANSI escape codes to HTML with colors
+function ansiToHtml(text: string): string {
+  // Split by lines, process each
+  const lines = text.split('\n')
+
+  const styledLines = lines.map(line => {
+    // Escape HTML
+    let escaped = line
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+
+    // Apply ANSI colors
+    escaped = escaped
+      .replace(/\[1;31m/g, '<span style="color:#ff4d4f;font-weight:bold">')
+      .replace(/\[31m/g, '<span style="color:#ff4d4f">')
+      .replace(/\[1;36m/g, '<span style="color:#13c2c2;font-weight:bold">')
+      .replace(/\[32m/g, '<span style="color:#52c41a">')
+      .replace(/\[33m/g, '<span style="color:#faad14">')
+      .replace(/\[34m/g, '<span style="color:#1677ff">')
+      .replace(/\[35m/g, '<span style="color:#eb2f96">')
+      .replace(/\[36m/g, '<span style="color:#13c2c2">')
+      .replace(/\[1m/g, '<span style="font-weight:bold">')
+      .replace(/\[0m/g, '</span>')
+
+    // Close any unclosed spans
+    const openCount = (escaped.match(/<span/g) || []).length
+    const closeCount = (escaped.match(/<\/span>/g) || []).length
+    if (openCount > closeCount) {
+      escaped += '</span>'.repeat(openCount - closeCount)
+    }
+
+    return escaped
+  })
+
+  return styledLines.join('<br/>')
+}
+
+const defaultConfig: TemplateConfig = {
+  core: 'xray-core',
+  port: 443,
+  uuid: '',
+  server_name: '',
+  protocols: ['vless_reality_vision'],
+  agent_enabled: false,
+  report_interval: 30,
+}
 
 export default function ServerList() {
   const [servers, setServers] = useState<Server[]>([])
+  const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
+  const [configModalVisible, setConfigModalVisible] = useState(false)
   const [installModalVisible, setInstallModalVisible] = useState(false)
   const [installOutput, setInstallOutput] = useState('')
   const [selectedServer, setSelectedServer] = useState<Server | null>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
+  const [installConfig, setInstallConfig] = useState<TemplateConfig>(defaultConfig)
   const [form] = Form.useForm()
   const [sshKeyType, setSshKeyType] = useState<string>('key')
+  const [installing, setInstalling] = useState(false)
+  const [accountModalVisible, setAccountModalVisible] = useState(false)
+  const [accounts, setAccounts] = useState<Account[]>([])
+  const [selectedServerForAccounts, setSelectedServerForAccounts] = useState<Server | null>(null)
+  const [addAccountForm] = Form.useForm()
 
   useEffect(() => {
     loadServers()
+    loadTemplates()
   }, [])
 
   const loadServers = async () => {
@@ -25,6 +83,15 @@ export default function ServerList() {
       message.error('加载服务器列表失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadTemplates = async () => {
+    try {
+      const data = await templateAPI.list()
+      setTemplates(data || [])
+    } catch (e) {
+      setTemplates([])
     }
   }
 
@@ -51,43 +118,124 @@ export default function ServerList() {
     }
   }
 
-  const handleInstall = (server: Server) => {
+  const handleInstallClick = (server: Server) => {
     setSelectedServer(server)
+    setSelectedTemplate(null)
+    setInstallConfig(defaultConfig)
+    setConfigModalVisible(true)
+  }
+
+  const handleTemplateChange = (templateId: number) => {
+    const tmpl = templates.find(t => t.id === templateId)
+    if (tmpl) {
+      setSelectedTemplate(tmpl)
+      setInstallConfig(tmpl.config)
+    }
+  }
+
+  const handleStartInstall = () => {
+    if (!selectedServer) return
+    setConfigModalVisible(false)
     setInstallOutput('')
     setInstallModalVisible(true)
+    setInstalling(true)
 
-    // Use fetch with POST to initiate SSE-like streaming
-    fetch(`/api/servers/${server.id}/install`, {
+    fetch(`/api/servers/${selectedServer.id}/install`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({})
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: installConfig })
     }).then(response => {
       if (!response.ok) {
-        throw new Error('Connection failed')
+        setInstallOutput('\n❌ 连接失败，状态码: ' + response.status)
+        setInstalling(false)
+        return
       }
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-
-      const read = () => {
-        reader?.read().then(({ done, value }) => {
-          if (done) {
-            return
-          }
-          const chunk = decoder.decode(value, { stream: true })
-          setInstallOutput(prev => prev + chunk)
-          read()
-        })
-      }
-      read()
-    }).catch(() => {
-      setInstallOutput(prev => prev + '\n❌ 连接失败，请检查服务器状态\n')
+      response.text().then(text => {
+        setInstallOutput(text)
+        setInstalling(false)
+        // Check if installation succeeded
+        if (text.includes('✓') || text.includes('安装完成')) {
+          message.success('安装完成！')
+        } else if (text.includes('[ERROR]')) {
+          message.error('安装失败，请检查输出')
+        }
+      }).catch(err => {
+        setInstallOutput(`\n❌ 读取错误: ${err}\n`)
+        setInstalling(false)
+      })
+    }).catch(err => {
+      setInstallOutput(`\n❌ 连接失败: ${err}\n`)
+      setInstalling(false)
     })
   }
 
   const closeInstallModal = () => {
     setInstallModalVisible(false)
+  }
+
+  const copyOutput = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(installOutput).then(() => {
+        message.success('已复制到剪贴板')
+      }).catch(() => {
+        message.error('复制失败')
+      })
+    }
+  }
+
+  const loadAccounts = async (serverId: string) => {
+    try {
+      const data = await accountAPI.listByServer(serverId)
+      setAccounts(data || [])
+    } catch (e) {
+      setAccounts([])
+    }
+  }
+
+  const handleOpenAccountModal = (server: Server) => {
+    setSelectedServerForAccounts(server)
+    loadAccounts(server.id)
+    setAccountModalVisible(true)
+  }
+
+  const handleAddAccount = async (values: any) => {
+    if (!selectedServerForAccounts) return
+    try {
+      await accountAPI.create(selectedServerForAccounts.id, values)
+      message.success('添加成功')
+      addAccountForm.resetFields()
+      loadAccounts(selectedServerForAccounts.id)
+    } catch (e) {
+      message.error('添加失败')
+    }
+  }
+
+  const handleDeleteAccount = async (id: string) => {
+    try {
+      await accountAPI.delete(id)
+      message.success('删除成功')
+      if (selectedServerForAccounts) {
+        loadAccounts(selectedServerForAccounts.id)
+      }
+    } catch (e) {
+      message.error('删除失败')
+    }
+  }
+
+  const handleDownloadSubscription = async (accountId: string, type: string) => {
+    try {
+      const content = await accountAPI.subscribe(accountId, type)
+      const blob = new Blob([content], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `subscription-${type}-${Date.now()}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
+      message.success('下载成功')
+    } catch (e) {
+      message.error('下载失败')
+    }
   }
 
   const columns = [
@@ -101,7 +249,8 @@ export default function ServerList() {
       title: '操作',
       render: (_: any, record: Server) => (
         <Space>
-          <Button size="small" type="primary" onClick={() => handleInstall(record)}>安装</Button>
+          <Button size="small" type="primary" onClick={() => handleInstallClick(record)}>安装</Button>
+          <Button size="small" onClick={() => handleOpenAccountModal(record)}>账号管理</Button>
           <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger>删除</Button>
           </Popconfirm>
@@ -114,6 +263,7 @@ export default function ServerList() {
     <div>
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" onClick={() => setModalVisible(true)}>添加服务器</Button>
+        <Button onClick={loadTemplates}>刷新模板</Button>
       </Space>
 
       <Table columns={columns} dataSource={servers} rowKey="id" loading={loading} />
@@ -160,12 +310,86 @@ export default function ServerList() {
         </Form>
       </Modal>
 
+      {/* 配置选择 Modal */}
+      <Modal
+        title={`配置安装 - ${selectedServer?.name || ''}`}
+        open={configModalVisible}
+        onCancel={() => setConfigModalVisible(false)}
+        onOk={handleStartInstall}
+        okText="开始安装"
+        cancelText="取消"
+      >
+        <Form layout="vertical">
+          <Form.Item label="选择模板">
+            <Select
+              placeholder="选择已有模板或留空自定义"
+              allowClear
+              onChange={(v) => v ? handleTemplateChange(v) : setSelectedTemplate(null)}
+            >
+              {templates.map(t => (
+                <Select.Option key={t.id} value={t.id}>{t.name}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item label="协议类型">
+            <Select
+              mode="multiple"
+              value={installConfig.protocols}
+              onChange={(v) => setInstallConfig({ ...installConfig, protocols: v })}
+            >
+              <Select.Option value="vless_reality_vision">VLESS + Reality + Vision</Select.Option>
+              <Select.Option value="vless_tcp_vision">VLESS + TCP + Vision</Select.Option>
+              <Select.Option value="vmess_ws">VMess + WebSocket</Select.Option>
+              <Select.Option value="trojan">Trojan</Select.Option>
+              <Select.Option value="hysteria2">Hysteria2</Select.Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item label="端口">
+            <Input
+              type="number"
+              value={installConfig.port}
+              onChange={(e) => setInstallConfig({ ...installConfig, port: parseInt(e.target.value) || 443 })}
+            />
+          </Form.Item>
+
+          <Form.Item label="服务器名称 (SNI)">
+            <Input
+              value={installConfig.server_name}
+              onChange={(e) => setInstallConfig({ ...installConfig, server_name: e.target.value })}
+              placeholder="例如: www.apple.com"
+            />
+          </Form.Item>
+
+          <Form.Item label="UUID (留空自动生成)">
+            <Input
+              value={installConfig.uuid}
+              onChange={(e) => setInstallConfig({ ...installConfig, uuid: e.target.value })}
+              placeholder="自动生成"
+            />
+          </Form.Item>
+
+          <Form.Item label="核心">
+            <Select
+              value={installConfig.core}
+              onChange={(v) => setInstallConfig({ ...installConfig, core: v })}
+            >
+              <Select.Option value="xray-core">Xray-core</Select.Option>
+              <Select.Option value="sing-box">Sing-box</Select.Option>
+            </Select>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 安装输出 Modal */}
       <Modal
         title={`安装 v2ray 到 ${selectedServer?.name || ''}`}
         open={installModalVisible}
         onCancel={closeInstallModal}
+        width={900}
         footer={[
-          <Button key="copy" onClick={copyOutput}>
+          <Button key="copy" onClick={copyOutput} disabled={installing}>
             复制输出
           </Button>,
           <Button key="close" onClick={closeInstallModal}>
@@ -173,17 +397,75 @@ export default function ServerList() {
           </Button>,
         ]}
       >
+        {installing && <div style={{ color: '#888', marginBottom: 8 }}>正在安装，请稍候...（这可能需要10-30秒）</div>}
         <pre style={{
           background: '#1e1e1e',
-          color: '#0f0',
+          color: '#ffffff',
           padding: 16,
           borderRadius: 4,
-          maxHeight: 400,
+          height: 500,
           overflow: 'auto',
-          fontFamily: 'monospace'
-        }}>
-          {installOutput || '正在连接...'}
-        </pre>
+          fontFamily: 'monospace',
+          fontSize: 13,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all'
+        }}
+          dangerouslySetInnerHTML={{ __html: installOutput ? ansiToHtml(installOutput) : '准备中...' }}
+        />
+      </Modal>
+
+      {/* 账号管理 Modal */}
+      <Modal
+        title={`账号管理 - ${selectedServerForAccounts?.name || ''}`}
+        open={accountModalVisible}
+        onCancel={() => setAccountModalVisible(false)}
+        width={700}
+        footer={null}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Space>
+            <Button type="primary" onClick={() => addAccountForm.resetFields()}>添加账号</Button>
+          </Space>
+        </div>
+
+        <Form form={addAccountForm} onFinish={handleAddAccount} layout="inline" style={{ marginBottom: 16 }}>
+          <Form.Item name="email" label="备注" rules={[{ required: true }]}>
+            <Input placeholder="user@example.com" style={{ width: 150 }} />
+          </Form.Item>
+          <Form.Item name="protocols" label="协议" rules={[{ required: true }]}>
+            <Select mode="multiple" style={{ width: 200 }}>
+              <Select.Option value="vless_tcp">VLESS TCP</Select.Option>
+              <Select.Option value="vless_reality_vision">VLESS Reality Vision</Select.Option>
+              <Select.Option value="trojan">Trojan</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit">确定</Button>
+          </Form.Item>
+        </Form>
+
+        <Table
+          dataSource={accounts}
+          rowKey="id"
+          size="small"
+          columns={[
+            { title: '备注', dataIndex: 'email' },
+            { title: '协议', dataIndex: 'protocols', render: (p: string[]) => p?.map(v => <Tag key={v}>{v}</Tag>) },
+            { title: '状态', dataIndex: 'enabled', render: (v: boolean) => v ? '启用' : '禁用' },
+            {
+              title: '操作',
+              render: (_: any, record: Account) => (
+                <Space>
+                  <Button size="small" onClick={() => handleDownloadSubscription(record.id, 'vless')}>VLESS</Button>
+                  <Button size="small" onClick={() => handleDownloadSubscription(record.id, 'clash_meta')}>Clash</Button>
+                  <Popconfirm title="确定删除?" onConfirm={() => handleDeleteAccount(record.id)}>
+                    <Button size="small" danger>删除</Button>
+                  </Popconfirm>
+                </Space>
+              ),
+            },
+          ]}
+        />
       </Modal>
     </div>
   )
