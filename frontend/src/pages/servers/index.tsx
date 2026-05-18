@@ -1,20 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Card } from 'antd'
 import { serverAPI, templateAPI, accountAPI, Server, Template, TemplateConfig, Account } from '../../services/api'
 
 // Convert ANSI escape codes to HTML with colors
 function ansiToHtml(text: string): string {
-  // Split by lines, process each
   const lines = text.split('\n')
-
   const styledLines = lines.map(line => {
-    // Escape HTML
     let escaped = line
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-
-    // Apply ANSI colors
     escaped = escaped
       .replace(/\[1;31m/g, '<span style="color:#ff4d4f;font-weight:bold">')
       .replace(/\[31m/g, '<span style="color:#ff4d4f">')
@@ -26,21 +21,17 @@ function ansiToHtml(text: string): string {
       .replace(/\[36m/g, '<span style="color:#13c2c2">')
       .replace(/\[1m/g, '<span style="font-weight:bold">')
       .replace(/\[0m/g, '</span>')
-
-    // Close any unclosed spans
     const openCount = (escaped.match(/<span/g) || []).length
     const closeCount = (escaped.match(/<\/span>/g) || []).length
     if (openCount > closeCount) {
       escaped += '</span>'.repeat(openCount - closeCount)
     }
-
     return escaped
   })
-
   return styledLines.join('<br/>')
 }
 
-// 协议名称中文映射
+// Protocol name mapping
 const protocolNames: Record<string, string> = {
   'vless_tcp': 'VLESS TCP',
   'vless_reality_vision': 'VLESS Reality',
@@ -169,7 +160,6 @@ export default function ServerList() {
       response.text().then(text => {
         setInstallOutput(text)
         setInstalling(false)
-        // Check if installation succeeded
         if (text.includes('✓') || text.includes('安装完成')) {
           message.success('安装完成！')
         } else if (text.includes('[ERROR]')) {
@@ -287,13 +277,50 @@ export default function ServerList() {
   ]
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button type="primary" onClick={() => setModalVisible(true)}>添加服务器</Button>
-        <Button onClick={loadTemplates}>刷新模板</Button>
-      </Space>
+    <div className="animate-in">
+      {/* Page Header */}
+      <div className="page-header">
+        <h1>服务器管理</h1>
+        <p>管理您的 V2ray 服务器和账号</p>
+      </div>
 
-      <Table columns={columns} dataSource={servers} rowKey="id" loading={loading} />
+      {/* Stats Grid */}
+      <div className="stats-grid">
+        <div className="stat-card animate-in animate-delay-1">
+          <div className="stat-icon rose">⚡</div>
+          <div className="stat-content">
+            <h3>{servers.length}</h3>
+            <p>服务器总数</p>
+          </div>
+        </div>
+        <div className="stat-card animate-in animate-delay-2">
+          <div className="stat-icon sage">✓</div>
+          <div className="stat-content">
+            <h3>{servers.filter(s => s.status === 'online').length}</h3>
+            <p>在线服务器</p>
+          </div>
+        </div>
+        <div className="stat-card animate-in animate-delay-3">
+          <div className="stat-icon sky">📋</div>
+          <div className="stat-content">
+            <h3>{templates.length}</h3>
+            <p>可用模板</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Action Bar */}
+      <Card className="morandi-card" style={{ marginBottom: 20 }}>
+        <Space style={{ marginBottom: 12 }}>
+          <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
+          <Button onClick={loadTemplates}>刷新模板</Button>
+        </Space>
+      </Card>
+
+      {/* Server Table */}
+      <Card className="morandi-card">
+        <Table columns={columns} dataSource={servers} rowKey="id" loading={loading} pagination={{ pageSize: 10 }} />
+      </Card>
 
       <Modal
         title="添加服务器"
@@ -337,7 +364,7 @@ export default function ServerList() {
         </Form>
       </Modal>
 
-      {/* 配置选择 Modal */}
+      {/* Config Modal */}
       <Modal
         title={`配置安装 - ${selectedServer?.name || ''}`}
         open={configModalVisible}
@@ -409,7 +436,7 @@ export default function ServerList() {
         </Form>
       </Modal>
 
-      {/* 安装输出 Modal */}
+      {/* Install Output Modal */}
       <Modal
         title={`安装 v2ray 到 ${selectedServer?.name || ''}`}
         open={installModalVisible}
@@ -429,7 +456,7 @@ export default function ServerList() {
           background: '#1e1e1e',
           color: '#ffffff',
           padding: 16,
-          borderRadius: 4,
+          borderRadius: 8,
           height: 500,
           overflow: 'auto',
           fontFamily: 'monospace',
@@ -441,18 +468,18 @@ export default function ServerList() {
         />
       </Modal>
 
-      {/* 账号管理 Modal */}
+      {/* Account Modal */}
       <Modal
         title={`账号管理 - ${selectedServerForAccounts?.name || ''}`}
         open={accountModalVisible}
         onCancel={() => setAccountModalVisible(false)}
-        width={700}
+        width={750}
         footer={null}
       >
         <div style={{ marginBottom: 16 }}>
           <Space>
             <Button type="primary" onClick={handleImportFromRemote}>从远程导入</Button>
-            <Button type="primary" onClick={() => addAccountForm.resetFields()}>清空</Button>
+            <Button onClick={() => addAccountForm.resetFields()}>清空</Button>
           </Space>
         </div>
 
