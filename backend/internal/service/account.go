@@ -85,6 +85,40 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 	return string(data), nil
 }
 
+// GenerateSingBoxSubscription 生成 sing-box 订阅
+func (s *AccountService) GenerateSingBoxSubscription(accounts []*model.Account, serverIP string) (string, error) {
+	outbounds := make([]map[string]interface{}, 0)
+	for _, acc := range accounts {
+		if !acc.Enabled {
+			continue
+		}
+		for range acc.Protocols {
+			outbound := map[string]interface{}{
+				"tag":         acc.Email,
+				"type":       "vless",
+				"server":     serverIP,
+				"server_port": 443,
+				"uuid":       acc.UUID,
+				"flow":       "xtls-rprx-vision",
+				"tls": map[string]interface{}{
+					"enabled":    true,
+					"server_name": serverIP,
+				},
+			}
+			outbounds = append(outbounds, outbound)
+		}
+	}
+
+	config := map[string]interface{}{
+		"outbounds": outbounds,
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // SyncAllToRemote 同步服务器所有账号到远程
 func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) error {
 	server, err := s.serverRepo.GetByID(serverID)

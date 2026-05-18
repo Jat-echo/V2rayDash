@@ -40,6 +40,22 @@ function ansiToHtml(text: string): string {
   return styledLines.join('<br/>')
 }
 
+// 协议名称中文映射
+const protocolNames: Record<string, string> = {
+  'vless_tcp': 'VLESS TCP',
+  'vless_reality_vision': 'VLESS Reality',
+  'vless_ws': 'VLESS WebSocket',
+  'trojan': 'Trojan',
+  'trojan_grpc': 'Trojan gRPC',
+  'vmess_ws': 'VMess WS',
+  'hysteria2': 'Hysteria2',
+  'tuic': 'Tuic',
+}
+
+function getProtocolName(proto: string): string {
+  return protocolNames[proto] || proto
+}
+
 const defaultConfig: TemplateConfig = {
   core: 'xray-core',
   port: 443,
@@ -196,6 +212,17 @@ export default function ServerList() {
     setSelectedServerForAccounts(server)
     loadAccounts(server.id)
     setAccountModalVisible(true)
+  }
+
+  const handleImportFromRemote = async () => {
+    if (!selectedServerForAccounts) return
+    try {
+      const result = await accountAPI.import(selectedServerForAccounts.id)
+      message.success(`成功导入 ${result.accounts?.length || 0} 个账号`)
+      loadAccounts(selectedServerForAccounts.id)
+    } catch (e) {
+      message.error('导入失败')
+    }
   }
 
   const handleAddAccount = async (values: any) => {
@@ -424,6 +451,7 @@ export default function ServerList() {
       >
         <div style={{ marginBottom: 16 }}>
           <Space>
+            <Button type="primary" onClick={handleImportFromRemote}>从远程导入</Button>
             <Button type="primary" onClick={() => addAccountForm.resetFields()}>清空</Button>
           </Space>
         </div>
@@ -450,14 +478,19 @@ export default function ServerList() {
           size="small"
           columns={[
             { title: '备注', dataIndex: 'email' },
-            { title: '协议', dataIndex: 'protocols', render: (p: string[]) => p?.map(v => <Tag key={v}>{v}</Tag>) },
+            { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
+            { title: '协议', dataIndex: 'protocols', render: (p: string[]) => p?.map(v => <Tag key={v}>{getProtocolName(v)}</Tag>) },
             { title: '状态', dataIndex: 'enabled', render: (v: boolean) => v ? '启用' : '禁用' },
             {
               title: '操作',
               render: (_: any, record: Account) => (
                 <Space>
-                  <Button size="small" onClick={() => handleDownloadSubscription(record.id, 'vless')}>VLESS</Button>
-                  <Button size="small" onClick={() => handleDownloadSubscription(record.id, 'clash_meta')}>Clash</Button>
+                  <Popconfirm title="确定下载VLESS订阅?" onConfirm={() => handleDownloadSubscription(record.id, 'vless')}>
+                    <Button size="small">VLESS</Button>
+                  </Popconfirm>
+                  <Popconfirm title="确定下载Clash订阅?" onConfirm={() => handleDownloadSubscription(record.id, 'clash_meta')}>
+                    <Button size="small">Clash</Button>
+                  </Popconfirm>
                   <Popconfirm title="确定删除?" onConfirm={() => handleDeleteAccount(record.id)}>
                     <Button size="small" danger>删除</Button>
                   </Popconfirm>

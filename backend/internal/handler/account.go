@@ -181,6 +181,8 @@ func (h *AccountHandler) Subscribe(c *gin.Context) {
 	switch subType {
 	case "clash_meta":
 		content, subErr = h.accountSvc.GenerateClashMetaSubscription([]*model.Account{account}, server.IP)
+	case "singbox":
+		content, subErr = h.accountSvc.GenerateSingBoxSubscription([]*model.Account{account}, server.IP)
 	default:
 		content = h.accountSvc.GenerateVLESSSubscription([]*model.Account{account}, server.IP)
 	}
