@@ -34,6 +34,7 @@ func (h *AccountHandler) RegisterRoutes(r *gin.RouterGroup) {
 		accounts.GET("", h.List)
 		accounts.POST("", h.Create)
 		accounts.POST("/import", h.Import)
+		accounts.POST("/sync", h.SyncAll)
 	}
 
 	accountRoutes := r.Group("/accounts")
@@ -42,6 +43,7 @@ func (h *AccountHandler) RegisterRoutes(r *gin.RouterGroup) {
 		accountRoutes.PUT("/:id", h.Update)
 		accountRoutes.DELETE("/:id", h.Delete)
 		accountRoutes.GET("/:id/subscribe", h.Subscribe)
+		accountRoutes.POST("/:id/sync", h.Sync)
 	}
 }
 
@@ -83,6 +85,20 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+
+	// Sync to remote server
+	server, err := h.serverRepo.GetByID(serverID)
+	if err == nil {
+		var auth ssh.SSHAuth
+		if server.SSHKeyType == "password" {
+			auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+		} else {
+			auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+		}
+		// Sync non-blocking
+		go h.accountSvc.SyncAllToRemote(serverID, auth)
+	}
+
 	c.JSON(http.StatusCreated, account)
 }
 
@@ -103,10 +119,37 @@ func (h *AccountHandler) Update(c *gin.Context) {
 
 func (h *AccountHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
+
+	// Get account info before deletion to know which server it belongs to
+	account, err := h.accountRepo.GetByID(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	// Delete from local DB
 	if err := h.accountRepo.Delete(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
 	}
+
+	// Sync remaining accounts to remote server
+	server, err := h.serverRepo.GetByID(account.ServerID)
+	if err == nil {
+		var auth ssh.SSHAuth
+		if server.SSHKeyType == "password" {
+			auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+		} else {
+			auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+		}
+		// Sync remaining accounts (non-blocking, ignore error)
+		go h.accountSvc.SyncAllToRemote(account.ServerID, auth)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
@@ -178,4 +221,57 @@ func (h *AccountHandler) Import(c *gin.Context) {
 		"message":  "imported",
 		"accounts": accounts,
 	})
+}
+func (h *AccountHandler) Sync(c *gin.Context) {
+	id := c.Param("id")
+
+	account, err := h.accountRepo.GetByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+		return
+	}
+
+	server, err := h.serverRepo.GetByID(account.ServerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
+		return
+	}
+
+	var auth ssh.SSHAuth
+	if server.SSHKeyType == "password" {
+		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+	} else {
+		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+	}
+
+	if err := h.accountSvc.SyncAllToRemote(account.ServerID, auth); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sync failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "synced"})
+}
+
+func (h *AccountHandler) SyncAll(c *gin.Context) {
+	serverID := c.Param("id")
+
+	server, err := h.serverRepo.GetByID(serverID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
+		return
+	}
+
+	var auth ssh.SSHAuth
+	if server.SSHKeyType == "password" {
+		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+	} else {
+		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+	}
+
+	if err := h.accountSvc.SyncAllToRemote(serverID, auth); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sync failed"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "synced"})
 }

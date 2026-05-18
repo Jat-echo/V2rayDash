@@ -85,7 +85,76 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 	return string(data), nil
 }
 
-// SyncToRemote 同步账号到远程服务器
+// SyncAllToRemote 同步服务器所有账号到远程
+func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) error {
+	server, err := s.serverRepo.GetByID(serverID)
+	if err != nil {
+		return err
+	}
+	if server == nil {
+		return fmt.Errorf("server not found: %s", serverID)
+	}
+
+	accounts, err := s.accountRepo.ListByServerID(serverID)
+	if err != nil {
+		return err
+	}
+
+	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	sftpClient, err := ssh.NewSFTPClient(client)
+	if err != nil {
+		return err
+	}
+	defer sftpClient.Close()
+
+	// Build clients array from all accounts
+	clients := make([]map[string]interface{}, 0)
+	for _, acc := range accounts {
+		if acc.Enabled {
+			clients = append(clients, map[string]interface{}{
+				"id":    acc.UUID,
+				"email": acc.Email,
+			})
+		}
+	}
+
+	// Generate full config
+	config := map[string]interface{}{
+		"log": map[string]interface{}{
+			"loglevel": "warning",
+		},
+		"inbounds": []map[string]interface{}{
+			{
+				"port":     443,
+				"protocol": "vless",
+				"settings": map[string]interface{}{
+					"clients": clients,
+				},
+			},
+		},
+	}
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	tmpFile := "/tmp/v2ray_config_" + serverID + ".json"
+	err = os.WriteFile(tmpFile, data, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write temp config: %w", err)
+	}
+	defer os.Remove(tmpFile)
+
+	return sftpClient.UploadFile(tmpFile, "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json")
+}
+
+// SyncToRemote 同步单个账号到远程服务器
 func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error {
 	account, err := s.accountRepo.GetByID(accountID)
 	if err != nil {
