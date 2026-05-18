@@ -72,11 +72,11 @@ func (h *AccountHandler) Get(c *gin.Context) {
 func (h *AccountHandler) Create(c *gin.Context) {
 	serverID := c.Param("id")
 	var req model.CreateAccountRequest
+	req.ServerID = serverID
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	req.ServerID = serverID
 
 	account, err := h.accountRepo.Create(&req)
 	if err != nil {
