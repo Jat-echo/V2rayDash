@@ -17,9 +17,7 @@ func NewLogHandler(repo *repository.LogRepository) *LogHandler {
 }
 
 func (h *LogHandler) ListOperationLogs(c *gin.Context) {
-	filter := &model.OperationLogFilter{
-		// 从 query 参数构建 filter
-	}
+	filter := &model.OperationLogFilter{}
 
 	logs, err := h.repo.List(filter)
 	if err != nil {
