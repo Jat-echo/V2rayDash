@@ -24,10 +24,12 @@ export default function SubscriptionList() {
         subscriptionAPI.list(),
         serverAPI.list(),
       ])
-      setSubscriptions(subs)
-      setServers(srvs)
+      setSubscriptions(subs || [])
+      setServers(srvs || [])
     } catch (e) {
       message.error('加载失败')
+      setSubscriptions([])
+      setServers([])
     } finally {
       setLoading(false)
     }
@@ -42,6 +44,16 @@ export default function SubscriptionList() {
       loadData()
     } catch (e) {
       message.error('添加失败')
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await subscriptionAPI.delete(id)
+      message.success('删除成功')
+      loadData()
+    } catch (e) {
+      message.error('删除失败')
     }
   }
 
@@ -80,7 +92,7 @@ export default function SubscriptionList() {
       render: (_: any, record: Subscription) => (
         <Space>
           <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
-          <Button size="small" danger onClick={() => subscriptionAPI.delete(record.id).then(loadData)}>删除</Button>
+          <Button size="small" danger onClick={() => handleDelete(record.id)}>删除</Button>
         </Space>
       ),
     },
