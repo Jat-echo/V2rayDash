@@ -311,10 +311,7 @@ export default function ServerList() {
 
       {/* Action Bar */}
       <Card className="morandi-card" style={{ marginBottom: 20 }}>
-        <Space style={{ marginBottom: 12 }}>
-          <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
-          <Button onClick={loadTemplates}>刷新模板</Button>
-        </Space>
+        <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
       </Card>
 
       {/* Server Table */}
