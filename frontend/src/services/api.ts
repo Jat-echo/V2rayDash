@@ -53,6 +53,8 @@ export const accountAPI = {
   delete: (id: string) => api.delete(`/accounts/${id}`),
   subscribe: (id: string, type?: string) =>
     api.get(`/accounts/${id}/subscribe`, { params: { type } }).then(r => r.data),
+  import: (serverId: string) =>
+    api.post<{ message: string; accounts: Account[] }>(`/servers/${serverId}/accounts/import`),
 }
 
 export interface OperationLog {
