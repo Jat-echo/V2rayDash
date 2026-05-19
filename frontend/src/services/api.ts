@@ -66,6 +66,18 @@ export interface OperationLog {
   created_at: string
 }
 
+export interface NodeStatus {
+  id: string
+  server_id: string
+  cpu_percent: number
+  memory_percent: number
+  disk_percent: number
+  bandwidth_in: number
+  bandwidth_out: number
+  v2ray_status: string
+  reported_at: string
+}
+
 export interface Template {
   id: number
   name: string
@@ -113,4 +125,5 @@ export const templateAPI = {
 export const logAPI = {
   list: (params?: { start_time?: string; end_time?: string; target_type?: string }) =>
     api.get<OperationLog[]>('/logs/operation', { params }).then(r => r.data),
+  getNodeStatuses: () => api.get<NodeStatus[]>('/logs/node-status').then(r => r.data),
 }

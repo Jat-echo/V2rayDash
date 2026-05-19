@@ -53,6 +53,13 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		// 日志
 		logHandler := NewLogHandler(logRepo)
 		api.GET("/logs/operation", logHandler.ListOperationLogs)
+		api.GET("/logs/node-status", logHandler.ListNodeStatuses)
+
+		// Agent 安装脚本
+		r.GET("/install-agent.sh", func(c *gin.Context) {
+			c.Header("Content-Type", "text/plain")
+			c.File("/home/jat-id/Project/V2rayDash/scripts/install-agent.sh")
+		})
 
 		// 模板管理
 		templateHandler := NewTemplateHandler(db)

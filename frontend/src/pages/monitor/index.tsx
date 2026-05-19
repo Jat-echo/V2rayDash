@@ -1,15 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Row, Col, Statistic, Tag, message } from 'antd'
-import { serverAPI, Server } from '../../services/api'
-
-interface NodeStatus {
-  server_id: string
-  cpu_percent: number
-  memory_percent: number
-  disk_percent: number
-  v2ray_status: string
-  reported_at: string
-}
+import { Card, Row, Col, Statistic, Tag, Progress, message } from 'antd'
+import { serverAPI, logAPI, Server, NodeStatus } from '../../services/api'
 
 export default function Monitor() {
   const [servers, setServers] = useState<Server[]>([])
@@ -25,11 +16,18 @@ export default function Monitor() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const data = await serverAPI.list()
-      setServers(data || [])
-      // 节点状态需要通过 agent 上报，目前暂无数据源
-      // 如果后续实现了 agent 上报机制，可以在这里获取状态
-      setStatuses(new Map())
+      const [serverData, statusData] = await Promise.all([
+        serverAPI.list(),
+        logAPI.getNodeStatuses()
+      ])
+
+      setServers(serverData || [])
+
+      const statusMap = new Map<string, NodeStatus>()
+      if (statusData && statusData.length > 0) {
+        statusData.forEach(s => statusMap.set(s.server_id, s))
+      }
+      setStatuses(statusMap)
     } catch (e) {
       message.error('加载失败')
     } finally {
@@ -37,9 +35,24 @@ export default function Monitor() {
     }
   }
 
-  const getStatusTag = (status: string) => {
-    const color = status === 'online' ? 'green' : status === 'offline' ? 'red' : 'default'
-    return <Tag color={color}>{status === 'online' ? '在线' : status === 'offline' ? '离线' : '未知'}</Tag>
+  const getStatusColor = (status: string) => {
+    if (status === 'running') return 'green'
+    if (status === 'stopped') return 'red'
+    return 'default'
+  }
+
+  const getV2rayTag = (status: string) => (
+    <Tag color={getStatusColor(status)}>
+      {status === 'running' ? '运行中' : status === 'stopped' ? '已停止' : '未知'}
+    </Tag>
+  )
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
   return (
@@ -50,43 +63,85 @@ export default function Monitor() {
         <p>查看服务器状态和性能指标</p>
       </div>
 
-      {/* Server Cards */}
+      {/* Server Cards with Status */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
-        {servers.map(server => (
-          <Col span={8} key={server.id} style={{ marginBottom: 16 }}>
-            <Card
-              className="morandi-card"
-              title={
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>{server.name}</span>
-                  {getStatusTag(server.status)}
-                </span>
-              }
-              loading={loading}
-            >
-              <Statistic title="IP 地址" value={server.ip} />
-              <div style={{ marginTop: 16 }}>
-                <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>
-                  SSH 端口: {server.ssh_port}
+        {servers.map(server => {
+          const status = statuses.get(server.id)
+          return (
+            <Col span={8} key={server.id} style={{ marginBottom: 16 }}>
+              <Card
+                className="morandi-card"
+                title={
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span>{server.name}</span>
+                    {status ? getV2rayTag(status.v2ray_status) : <Tag color="default">离线</Tag>}
+                  </span>
+                }
+                loading={loading}
+              >
+                <Statistic title="IP 地址" value={server.ip} />
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    SSH: {server.ssh_port}
+                  </div>
+                  {status ? (
+                    <>
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span>CPU</span>
+                          <span style={{ color: 'var(--morandi-terracotta)' }}>{status.cpu_percent.toFixed(1)}%</span>
+                        </div>
+                        <Progress percent={status.cpu_percent} showInfo={false} strokeColor="var(--morandi-dusty-rose)" size="small" />
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span>内存</span>
+                          <span style={{ color: 'var(--morandi-sage)' }}>{status.memory_percent.toFixed(1)}%</span>
+                        </div>
+                        <Progress percent={status.memory_percent} showInfo={false} strokeColor="var(--morandi-sage)" size="small" />
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span>磁盘</span>
+                          <span style={{ color: 'var(--morandi-sky)' }}>{status.disk_percent.toFixed(1)}%</span>
+                        </div>
+                        <Progress percent={status.disk_percent} showInfo={false} strokeColor="var(--morandi-sky)" size="small" />
+                      </div>
+                      <div style={{ marginTop: 12, display: 'flex', gap: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>入站</div>
+                          <div style={{ color: 'var(--morandi-lavender)' }}>{formatBytes(status.bandwidth_in)}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>出站</div>
+                          <div style={{ color: 'var(--morandi-lavender)' }}>{formatBytes(status.bandwidth_out)}</div>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+                        上报时间: {new Date(status.reported_at).toLocaleString()}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--text-muted)' }}>
+                      等待 Agent 上报状态...
+                    </div>
+                  )}
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                  用户: {server.ssh_user}
-                </div>
-              </div>
-            </Card>
-          </Col>
-        ))}
+              </Card>
+            </Col>
+          )
+        })}
       </Row>
 
-      {/* Note about agent status */}
-      <Card className="morandi-card">
-        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
-          <h3 style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>节点状态监控</h3>
-          <p>节点状态需要通过 Agent 上报。</p>
-          <p>部署 Agent 后，服务器状态和性能指标将显示在这里。</p>
-        </div>
-      </Card>
+      {servers.length === 0 && (
+        <Card className="morandi-card">
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🖥️</div>
+            <h3 style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>暂无服务器</h3>
+            <p>请先在服务器管理中添加服务器</p>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

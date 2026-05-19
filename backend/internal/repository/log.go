@@ -74,3 +74,27 @@ func (r *LogRepository) GetLatestNodeStatus(serverID string) (*model.NodeStatus,
 	).Scan(&s.ID, &s.ServerID, &s.CPUPercent, &s.MemoryPercent, &s.DiskPercent, &s.BandwidthIn, &s.BandwidthOut, &s.V2rayStatus, &s.ReportedAt)
 	return &s, err
 }
+
+func (r *LogRepository) ListNodeStatuses() ([]*model.NodeStatus, error) {
+	rows, err := r.db.Query(`
+		SELECT DISTINCT ON (server_id)
+			id, server_id, cpu_percent, memory_percent, disk_percent,
+			bandwidth_in, bandwidth_out, v2ray_status, reported_at
+		FROM node_status
+		ORDER BY server_id, reported_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var statuses []*model.NodeStatus
+	for rows.Next() {
+		var s model.NodeStatus
+		if err := rows.Scan(&s.ID, &s.ServerID, &s.CPUPercent, &s.MemoryPercent, &s.DiskPercent, &s.BandwidthIn, &s.BandwidthOut, &s.V2rayStatus, &s.ReportedAt); err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, &s)
+	}
+	return statuses, nil
+}

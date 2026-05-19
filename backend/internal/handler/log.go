@@ -29,3 +29,13 @@ func (h *LogHandler) ListOperationLogs(c *gin.Context) {
 
 	c.JSON(http.StatusOK, logs)
 }
+
+func (h *LogHandler) ListNodeStatuses(c *gin.Context) {
+	statuses, err := h.repo.ListNodeStatuses()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, statuses)
+}
