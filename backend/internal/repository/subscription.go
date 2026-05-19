@@ -43,6 +43,16 @@ func (r *SubscriptionRepository) GetByID(id string) (*model.Subscription, error)
 	return &s, err
 }
 
+func (r *SubscriptionRepository) GetByUUID(uuid string) (*model.Subscription, error) {
+	var s model.Subscription
+	err := r.db.QueryRow(
+		`SELECT id, server_id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		 FROM subscriptions WHERE uuid = $1`,
+		uuid,
+	).Scan(&s.ID, &s.ServerID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
+	return &s, err
+}
+
 func (r *SubscriptionRepository) List() ([]*model.Subscription, error) {
 	rows, err := r.db.Query(
 		`SELECT id, server_id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at

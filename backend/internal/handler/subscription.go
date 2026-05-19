@@ -9,17 +9,27 @@ import (
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
+	"v2ray-dash/backend/internal/service"
 )
 
 type SubscriptionHandler struct {
 	repo    *repository.SubscriptionRepository
 	logRepo *repository.LogRepository
+	accountRepo *repository.AccountRepository
+	serverRepo *repository.ServerRepository
+	accountSvc *service.AccountService
 }
 
 func NewSubscriptionHandler(db *sql.DB) *SubscriptionHandler {
 	return &SubscriptionHandler{
-		repo:    repository.NewSubscriptionRepository(db),
-		logRepo: repository.NewLogRepository(db),
+		repo:         repository.NewSubscriptionRepository(db),
+		logRepo:      repository.NewLogRepository(db),
+		accountRepo:  repository.NewAccountRepository(db),
+		serverRepo:   repository.NewServerRepository(db),
+		accountSvc:   service.NewAccountService(
+			repository.NewAccountRepository(db),
+			repository.NewServerRepository(db),
+		),
 	}
 }
 
@@ -123,12 +133,77 @@ func (h *SubscriptionHandler) GetLink(c *gin.Context) {
 		return
 	}
 
-	// 生成 Base64 编码的订阅链接
-	link := fmt.Sprintf("https://your-domain.com/api/subscribe/%s", sub.UUID)
+	// 使用实际域名生成订阅链接
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
+	link := fmt.Sprintf("%s/api/subscribe/%s", baseURL, sub.UUID)
 	encoded := base64.StdEncoding.EncodeToString([]byte(link))
 
 	c.JSON(http.StatusOK, gin.H{
 		"link":    link,
 		"encoded": encoded,
 	})
+}
+
+// ServeSubscription 处理订阅请求 - 通过 UUID 提供订阅内容
+func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
+	uuid := c.Param("uuid")
+	sub, err := h.repo.GetByUUID(uuid)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.String(http.StatusNotFound, "Subscription not found")
+			return
+		}
+		c.String(http.StatusInternalServerError, "Internal server error")
+		return
+	}
+
+	// 检查订阅是否启用
+	if !sub.Enable {
+		c.String(http.StatusForbidden, "Subscription is disabled")
+		return
+	}
+
+	// 获取关联的服务器
+	server, err := h.serverRepo.GetByID(sub.ServerID)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Server not found")
+		return
+	}
+
+	// 获取该服务器下的所有启用账号
+	accounts, err := h.accountRepo.ListByServerID(sub.ServerID)
+	if err != nil || len(accounts) == 0 {
+		c.String(http.StatusNotFound, "No accounts available")
+		return
+	}
+
+	// 获取订阅格式类型 (默认 vless)
+	subType := c.Query("format")
+	if subType == "" {
+		subType = "vless"
+	}
+
+	var content string
+	switch subType {
+	case "clash_meta":
+		content, _ = h.accountSvc.GenerateClashMetaSubscription(accounts, server.IP)
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+	case "singbox":
+		content, _ = h.accountSvc.GenerateSingBoxSubscription(accounts, server.IP)
+		c.Header("Content-Type", "application/json; charset=utf-8")
+	default:
+		content = h.accountSvc.GenerateVLESSSubscription(accounts, server.IP)
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+	}
+
+	// 设置订阅缓存头 (1小时)
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Header("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; left=%d",
+		sub.TrafficUsed, sub.TrafficLimit, sub.TrafficLimit-sub.TrafficUsed))
+
+	c.String(http.StatusOK, content)
 }

@@ -18,6 +18,10 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 
 	logRepo := repository.NewLogRepository(db.DB)
 
+	// 公开订阅接口 (无需认证)
+	subHandler := NewSubscriptionHandler(db.DB)
+	r.GET("/api/subscribe/:uuid", subHandler.ServeSubscription)
+
 	// API 路由组
 	api := r.Group("/api")
 	{
@@ -34,7 +38,6 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		accountHandler.RegisterRoutes(api)
 
 		// 订阅管理
-		subHandler := NewSubscriptionHandler(db.DB)
 		api.GET("/subscriptions", subHandler.List)
 		api.POST("/subscriptions", subHandler.Create)
 		api.GET("/subscriptions/:id", subHandler.Get)
