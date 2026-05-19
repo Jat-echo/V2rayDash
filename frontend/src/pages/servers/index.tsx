@@ -85,9 +85,10 @@ export default function ServerList() {
     setLoading(true)
     try {
       const data = await serverAPI.list()
-      setServers(data)
+      setServers(data || [])
     } catch (e) {
       message.error('加载服务器列表失败')
+      setServers([])
     } finally {
       setLoading(false)
     }
