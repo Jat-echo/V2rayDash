@@ -43,6 +43,9 @@ func (r *TemplateRepository) List() ([]*model.Template, error) {
 		json.Unmarshal(configJSON, &t.Config)
 		templates = append(templates, &t)
 	}
+	if templates == nil {
+		templates = []*model.Template{}
+	}
 	return templates, nil
 }
 

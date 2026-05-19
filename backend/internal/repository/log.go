@@ -52,6 +52,9 @@ func (r *LogRepository) List(filter *model.OperationLogFilter) ([]*model.Operati
 		}
 		logs = append(logs, &l)
 	}
+	if logs == nil {
+		logs = []*model.OperationLog{}
+	}
 	return logs, nil
 }
 
@@ -95,6 +98,9 @@ func (r *LogRepository) ListNodeStatuses() ([]*model.NodeStatus, error) {
 			return nil, err
 		}
 		statuses = append(statuses, &s)
+	}
+	if statuses == nil {
+		statuses = []*model.NodeStatus{}
 	}
 	return statuses, nil
 }

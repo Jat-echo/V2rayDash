@@ -71,6 +71,9 @@ func (r *SubscriptionRepository) List() ([]*model.Subscription, error) {
 		}
 		subs = append(subs, &s)
 	}
+	if subs == nil {
+		subs = []*model.Subscription{}
+	}
 	return subs, nil
 }
 
@@ -92,6 +95,9 @@ func (r *SubscriptionRepository) ListByServerID(serverID string) ([]*model.Subsc
 			return nil, err
 		}
 		subs = append(subs, &s)
+	}
+	if subs == nil {
+		subs = []*model.Subscription{}
 	}
 	return subs, nil
 }

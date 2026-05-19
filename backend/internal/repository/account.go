@@ -75,6 +75,9 @@ func (r *AccountRepository) ListByServerID(serverID string) ([]*model.Account, e
 		a.Protocols = protocols
 		accounts = append(accounts, &a)
 	}
+	if accounts == nil {
+		accounts = []*model.Account{}
+	}
 	return accounts, nil
 }
 
@@ -97,6 +100,9 @@ func (r *AccountRepository) List() ([]*model.Account, error) {
 		}
 		a.Protocols = protocols
 		accounts = append(accounts, &a)
+	}
+	if accounts == nil {
+		accounts = []*model.Account{}
 	}
 	return accounts, nil
 }

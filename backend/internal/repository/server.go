@@ -74,6 +74,9 @@ func (r *ServerRepository) List() ([]*model.Server, error) {
 		json.Unmarshal(tagsBytes, &s.Tags)
 		servers = append(servers, &s)
 	}
+	if servers == nil {
+		servers = []*model.Server{}
+	}
 	return servers, nil
 }
 
