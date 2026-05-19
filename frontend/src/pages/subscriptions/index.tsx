@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Card, Tag } from 'antd'
+import { CopyOutlined } from '@ant-design/icons'
 import { subscriptionAPI, serverAPI, Subscription, Server } from '../../services/api'
 
 export default function SubscriptionList() {
@@ -7,6 +8,9 @@ export default function SubscriptionList() {
   const [servers, setServers] = useState<Server[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
+  const [linkModalVisible, setLinkModalVisible] = useState(false)
+  const [currentLink, setCurrentLink] = useState('')
+  const [currentEncoded, setCurrentEncoded] = useState('')
   const [form] = Form.useForm()
 
   useEffect(() => {
@@ -43,25 +47,39 @@ export default function SubscriptionList() {
 
   const handleGetLink = async (id: string) => {
     try {
-      const { link } = await subscriptionAPI.getLink(id)
-      message.success(`订阅链接: ${link}`)
+      const { link, encoded } = await subscriptionAPI.getLink(id)
+      setCurrentLink(link)
+      setCurrentEncoded(encoded)
+      setLinkModalVisible(true)
     } catch (e) {
       message.error('获取链接失败')
     }
   }
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success('已复制到剪贴板')
+    }).catch(() => {
+      message.error('复制失败')
+    })
+  }
+
+  const getServerName = (serverId: string) => {
+    return servers.find(s => s.id === serverId)?.name || serverId
+  }
+
   const columns = [
     { title: '名称', dataIndex: 'name' },
-    { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v.slice(0, 8) + '...' },
-    { title: '服务器', dataIndex: 'server_id', render: (id: string) => servers.find(s => s.id === id)?.name || id },
+    { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
+    { title: '服务器', dataIndex: 'server_id', render: (id: string) => <Tag color="blue">{getServerName(id)}</Tag> },
     { title: '流量限制', dataIndex: 'traffic_limit', render: (v: number) => v ? `${(v/1024**3).toFixed(1)} GB` : '无限' },
     { title: '已用流量', dataIndex: 'traffic_used', render: (v: number) => `${(v/1024**3).toFixed(1)} GB` },
-    { title: '状态', dataIndex: 'enable', render: (v: boolean) => v ? '启用' : '禁用' },
+    { title: '状态', dataIndex: 'enable', render: (v: boolean) => v ? <Tag color="green">启用</Tag> : <Tag color="gray">禁用</Tag> },
     {
       title: '操作',
       render: (_: any, record: Subscription) => (
         <Space>
-          <Button size="small" onClick={() => handleGetLink(record.id)}>链接</Button>
+          <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
           <Button size="small" danger onClick={() => subscriptionAPI.delete(record.id).then(loadData)}>删除</Button>
         </Space>
       ),
@@ -69,17 +87,46 @@ export default function SubscriptionList() {
   ]
 
   return (
-    <div>
-      <Space style={{ marginBottom: 16 }}>
-        <Button type="primary" onClick={() => setModalVisible(true)}>添加账号</Button>
-      </Space>
+    <div className="animate-in">
+      {/* Page Header */}
+      <div className="page-header">
+        <h1>订阅管理</h1>
+        <p>创建和管理用户的订阅链接</p>
+      </div>
 
-      <Table columns={columns} dataSource={subscriptions} rowKey="id" loading={loading} />
+      {/* Stats Grid */}
+      <div className="stats-grid">
+        <div className="stat-card animate-in animate-delay-1">
+          <div className="stat-icon rose">📋</div>
+          <div className="stat-content">
+            <h3>{subscriptions.length}</h3>
+            <p>订阅总数</p>
+          </div>
+        </div>
+        <div className="stat-card animate-in animate-delay-2">
+          <div className="stat-icon sage">✓</div>
+          <div className="stat-content">
+            <h3>{subscriptions.filter(s => s.enable).length}</h3>
+            <p>启用中</p>
+          </div>
+        </div>
+      </div>
 
-      <Modal title="添加账号" open={modalVisible} onCancel={() => setModalVisible(false)} footer={null}>
-        <Form form={form} onFinish={handleAdd} layout="vertical">
+      {/* Action Bar */}
+      <Card className="morandi-card" style={{ marginBottom: 20 }}>
+        <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加订阅</Button>
+      </Card>
+
+      {/* Subscription Table */}
+      <Card className="morandi-card">
+        <Table columns={columns} dataSource={subscriptions} rowKey="id" loading={loading} pagination={{ pageSize: 10 }} />
+      </Card>
+
+      {/* Add Modal */}
+      <Modal title="添加订阅" open={modalVisible} onCancel={() => setModalVisible(false)} footer={null}>
+        <Form form={form} onFinish={handleAdd} layout="vertical" style={{ marginTop: 20 }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input />
+            <Input placeholder="例如: VIP用户" />
           </Form.Item>
           <Form.Item name="server_id" label="服务器" rules={[{ required: true }]}>
             <Select>
@@ -87,10 +134,38 @@ export default function SubscriptionList() {
             </Select>
           </Form.Item>
           <Form.Item name="traffic_limit" label="流量限制(GB)">
-            <Input type="number" />
+            <Input type="number" placeholder="留空表示无限流量" />
           </Form.Item>
           <Button type="primary" htmlType="submit">提交</Button>
         </Form>
+      </Modal>
+
+      {/* Link Modal */}
+      <Modal
+        title="订阅链接"
+        open={linkModalVisible}
+        onCancel={() => setLinkModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setLinkModalVisible(false)}>关闭</Button>,
+        ]}
+      >
+        <div style={{ marginTop: 16 }}>
+          <h4>原始链接</h4>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <Input value={currentLink} readOnly style={{ flex: 1 }} />
+            <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentLink)} />
+          </div>
+
+          <h4>Base64 编码链接 (适用于客户端)</h4>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input value={currentEncoded} readOnly style={{ flex: 1 }} />
+            <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentEncoded)} />
+          </div>
+
+          <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+            <p>支持格式: ?format=vless (默认) | ?format=clash_meta | ?format=singbox</p>
+          </div>
+        </div>
       </Modal>
     </div>
   )
