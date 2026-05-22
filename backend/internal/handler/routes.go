@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/config"
@@ -10,6 +12,19 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
+	// 获取安装脚本路径，默认值兼容开发和生产环境
+	installScriptPath := cfg.InstallScriptPath
+	if installScriptPath == "" {
+		// 开发环境和工作目录
+		cwd, _ := os.Getwd()
+		devPath := filepath.Join(cwd, "scripts", "install-agent.sh")
+		prodPath := "/opt/v2ray-dash/scripts/install-agent.sh"
+		if _, err := os.Stat(devPath); err == nil {
+			installScriptPath = devPath
+		} else {
+			installScriptPath = prodPath
+		}
+	}
 	// CORS
 	r.Use(func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
@@ -63,7 +78,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		// Agent 安装脚本
 		r.GET("/install-agent.sh", func(c *gin.Context) {
 			c.Header("Content-Type", "text/plain")
-			c.File("/opt/v2ray-dash/scripts/install-agent.sh")
+			c.File(installScriptPath)
 		})
 
 		// 模板管理
@@ -71,7 +86,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		templateHandler.RegisterRoutes(api)
 
 		// 安装管理
-		installHandler := NewInstallHandler("/opt/v2ray-dash/scripts/install-agent.sh", NewServerHandler(db.DB).repo)
+		installHandler := NewInstallHandler(installScriptPath, NewServerHandler(db.DB).repo)
 		api.POST("/servers/:id/install", installHandler.StartInstall)
 
 		// 系统设置
