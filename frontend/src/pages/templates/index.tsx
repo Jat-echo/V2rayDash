@@ -40,7 +40,15 @@ export default function TemplateList() {
 
   useEffect(() => {
     loadTemplates()
-    setServerId(crypto.randomUUID())
+    // Generate UUID without crypto.randomUUID for compatibility
+    const generateUUID = () => {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0
+        const v = c === 'x' ? r : (r & 0x3 | 0x8)
+        return v.toString(16)
+      })
+    }
+    setServerId(generateUUID())
     const array = new Uint8Array(24)
     crypto.getRandomValues(array)
     setPsk(btoa(String.fromCharCode(...array)).slice(0, 32))

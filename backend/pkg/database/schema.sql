@@ -30,6 +30,20 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 账号表 (必须在 subscription_accounts 之前创建)
+CREATE TABLE IF NOT EXISTS accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    uuid VARCHAR(64) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL,
+    protocols TEXT[] NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    traffic_limit BIGINT DEFAULT 0,
+    traffic_used BIGINT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 订阅账号关联表 (多对多)
 CREATE TABLE IF NOT EXISTS subscription_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -79,20 +93,6 @@ CREATE TABLE IF NOT EXISTS templates (
     name VARCHAR(100) NOT NULL,
     description TEXT,
     config JSONB NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 账号表
-CREATE TABLE IF NOT EXISTS accounts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
-    uuid VARCHAR(64) NOT NULL UNIQUE,
-    email VARCHAR(255) NOT NULL,
-    protocols TEXT[] NOT NULL,
-    enabled BOOLEAN DEFAULT true,
-    traffic_limit BIGINT DEFAULT 0,
-    traffic_used BIGINT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
