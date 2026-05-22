@@ -102,12 +102,12 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 		args = append(args, fmt.Sprintf("--server-name %s", config.ServerName))
 	}
 
-	// 4. 执行安装 - 发送参数和菜单选择
+	// 4. 执行安装 - 使用 script 命令模拟终端以支持交互式菜单
 	fmt.Fprintf(output, "[%s] 正在执行安装脚本...\n", time.Now().Format("15:04:05"))
 	fmt.Fprintf(output, "[%s] 参数: %s\n", time.Now().Format("15:04:05"), strings.Join(args, " "))
 
-	// 构建命令：传递参数 + 菜单选择（主菜单选择3=一键无域名Reality + 核心选择1=Xray）
-	cmd := fmt.Sprintf("chmod +x %s && printf '3\\n1\\n' | bash %s %s", remotePath, remotePath, strings.Join(args, " "))
+	// 使用 script 命令创建一个伪终端，这样脚本中的 read 命令就能正常工作
+	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"3\\n1\\n\" | bash %s %s' /dev/null", remotePath, remotePath, strings.Join(args, " "))
 
 	// 捕获安装输出以便后续解析 publicKey 和端口
 	var installOutput strings.Builder
