@@ -10,14 +10,17 @@ CREATE TABLE IF NOT EXISTS servers (
     ssh_password TEXT DEFAULT NULL,
     tags JSONB DEFAULT '[]',
     status VARCHAR(20) DEFAULT 'unknown',
+    reality_enabled BOOLEAN DEFAULT false,
+    reality_server_name VARCHAR(255) DEFAULT '',
+    reality_public_key VARCHAR(255) DEFAULT '',
+    reality_port INTEGER DEFAULT 443,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 订阅账号表
+-- 订阅表
 CREATE TABLE IF NOT EXISTS subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    server_id UUID NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     uuid VARCHAR(36) NOT NULL UNIQUE,
     enable BOOLEAN DEFAULT true,
@@ -26,6 +29,18 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 订阅账号关联表 (多对多)
+CREATE TABLE IF NOT EXISTS subscription_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+    account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_subscription_per_account UNIQUE (subscription_id, account_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_accounts_subscription ON subscription_accounts(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_subscription_accounts_account ON subscription_accounts(account_id);
 
 -- 操作日志表
 CREATE TABLE IF NOT EXISTS operation_logs (
@@ -54,7 +69,6 @@ CREATE TABLE IF NOT EXISTS node_status (
 
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_servers_status ON servers(status);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_server_id ON subscriptions(server_id);
 CREATE INDEX IF NOT EXISTS idx_operation_logs_created_at ON operation_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_node_status_server_id ON node_status(server_id);
 CREATE INDEX IF NOT EXISTS idx_node_status_reported_at ON node_status(reported_at);
@@ -94,3 +108,16 @@ CREATE TABLE IF NOT EXISTS subscriptions_records (
 
 CREATE INDEX IF NOT EXISTS idx_accounts_server_id ON accounts(server_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_records_account_id ON subscriptions_records(account_id);
+
+-- 系统设置表
+CREATE TABLE IF NOT EXISTS system_settings (
+    id VARCHAR(50) PRIMARY KEY,
+    value TEXT NOT NULL,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 初始化默认设置
+INSERT INTO system_settings (id, value, description) VALUES
+    ('public_url', 'http://localhost:8080', '控制中心公网访问地址')
+ON CONFLICT (id) DO NOTHING;

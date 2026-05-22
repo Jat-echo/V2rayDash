@@ -17,18 +17,6 @@ export interface Server {
   updated_at: string
 }
 
-export interface Subscription {
-  id: string
-  server_id: string
-  name: string
-  uuid: string
-  enable: boolean
-  traffic_limit: number
-  traffic_used: number
-  created_at: string
-  updated_at: string
-}
-
 export interface Account {
   id: string
   server_id: string
@@ -40,6 +28,35 @@ export interface Account {
   traffic_used: number
   created_at: string
   updated_at: string
+}
+
+export interface AccountWithServer extends Account {
+  server_name: string
+  server_ip: string
+}
+
+export interface AccountMapping {
+  server_id: string
+  account_id?: string
+  auto_create?: boolean
+}
+
+export interface Subscription {
+  id: string
+  name: string
+  uuid: string
+  enable: boolean
+  traffic_limit: number
+  traffic_used: number
+  created_at: string
+  updated_at: string
+  accounts?: AccountWithServer[]
+}
+
+export interface CreateSubscriptionRequest {
+  name: string
+  traffic_limit?: number
+  account_mappings: AccountMapping[]
 }
 
 export const accountAPI = {
@@ -91,9 +108,7 @@ export interface Template {
 
 export interface TemplateConfig {
   core: string
-  port: number
   uuid: string
-  server_name: string
   protocols: string[]
   agent_enabled: boolean
   report_interval: number
@@ -112,9 +127,14 @@ export const subscriptionAPI = {
     const params = serverId ? { server_id: serverId } : {}
     return api.get<Subscription[]>('/subscriptions', { params }).then(r => r.data)
   },
-  create: (data: Partial<Subscription>) => api.post<Subscription>('/subscriptions', data).then(r => r.data),
+  listFull: () => api.get<Subscription[]>('/subscriptions/full').then(r => r.data),
+  create: (data: CreateSubscriptionRequest) => api.post<Subscription>('/subscriptions', data).then(r => r.data),
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   getLink: (id: string) => api.get<{ link: string; encoded: string }>(`/subscriptions/${id}/link`).then(r => r.data),
+  addAccount: (id: string, data: AccountMapping) =>
+    api.post(`/subscriptions/${id}/accounts`, data),
+  removeAccount: (id: string, accountId: string) =>
+    api.delete(`/subscriptions/${id}/accounts/${accountId}`),
 }
 
 export const templateAPI = {

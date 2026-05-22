@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
@@ -13,24 +14,36 @@ import (
 )
 
 type SubscriptionHandler struct {
-	repo    *repository.SubscriptionRepository
-	logRepo *repository.LogRepository
-	accountRepo *repository.AccountRepository
-	serverRepo *repository.ServerRepository
-	accountSvc *service.AccountService
+	repo          *repository.SubscriptionRepository
+	subAccRepo    *repository.SubscriptionAccountRepository
+	logRepo       *repository.LogRepository
+	accountRepo   *repository.AccountRepository
+	serverRepo    *repository.ServerRepository
+	settingRepo   *repository.SettingRepository
+	accountSvc    *service.AccountService
 }
 
 func NewSubscriptionHandler(db *sql.DB) *SubscriptionHandler {
-	return &SubscriptionHandler{
-		repo:         repository.NewSubscriptionRepository(db),
-		logRepo:      repository.NewLogRepository(db),
-		accountRepo:  repository.NewAccountRepository(db),
-		serverRepo:   repository.NewServerRepository(db),
-		accountSvc:   service.NewAccountService(
+	h := &SubscriptionHandler{
+		repo:        repository.NewSubscriptionRepository(db),
+		subAccRepo:  repository.NewSubscriptionAccountRepository(db),
+		logRepo:     repository.NewLogRepository(db),
+		accountRepo: repository.NewAccountRepository(db),
+		serverRepo:  repository.NewServerRepository(db),
+		settingRepo: repository.NewSettingRepository(db),
+		accountSvc: service.NewAccountService(
 			repository.NewAccountRepository(db),
 			repository.NewServerRepository(db),
 		),
 	}
+	return h
+}
+
+func (h *SubscriptionHandler) getPublicURL() string {
+	if setting, err := h.settingRepo.Get("public_url"); err == nil && setting != nil && setting.Value != "" {
+		return setting.Value
+	}
+	return "http://localhost:8080"
 }
 
 func (h *SubscriptionHandler) List(c *gin.Context) {
@@ -51,9 +64,18 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, subs)
 }
 
+func (h *SubscriptionHandler) ListWithAccounts(c *gin.Context) {
+	subs, err := h.repo.GetSubscriptionsWithAccounts()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, subs)
+}
+
 func (h *SubscriptionHandler) Get(c *gin.Context) {
 	id := c.Param("id")
-	sub, err := h.repo.GetByID(id)
+	sub, err := h.repo.GetByIDWithAccounts(id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
@@ -78,16 +100,42 @@ func (h *SubscriptionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	accountIDs := make([]string, 0)
+	for _, mapping := range req.AccountMappings {
+		var accountID string
+		if mapping.AutoCreate {
+			newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
+				ServerID:  mapping.ServerID,
+				Email:    fmt.Sprintf("auto-%s", sub.ID[:8]),
+				Protocols: []string{"vless_tcp"},
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
+				return
+			}
+			accountID = newAccount.ID
+		} else {
+			accountID = mapping.AccountID
+		}
+
+		if err := h.subAccRepo.AddAccount(sub.ID, accountID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("add account to subscription failed: %v", err)})
+			return
+		}
+		accountIDs = append(accountIDs, accountID)
+	}
+
 	h.logRepo.Create(&model.OperationLog{
 		Operator:   "admin",
 		Action:     "create_subscription",
 		TargetType: "subscription",
 		TargetID:   sub.ID,
-		Detail:     map[string]any{"name": sub.Name, "server_id": sub.ServerID},
+		Detail:     map[string]any{"name": sub.Name, "account_count": len(accountIDs)},
 		IP:         c.ClientIP(),
 	})
 
-	c.JSON(http.StatusCreated, sub)
+	result, _ := h.repo.GetByIDWithAccounts(sub.ID)
+	c.JSON(http.StatusCreated, result)
 }
 
 func (h *SubscriptionHandler) Update(c *gin.Context) {
@@ -101,6 +149,33 @@ func (h *SubscriptionHandler) Update(c *gin.Context) {
 	if err := h.repo.Update(id, &req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	if req.AccountMappings != nil {
+		accountIDs := make([]string, 0)
+		for _, mapping := range *req.AccountMappings {
+			var accountID string
+			if mapping.AutoCreate {
+				newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
+					ServerID:  mapping.ServerID,
+					Email:    fmt.Sprintf("auto-%s", id[:8]),
+					Protocols: []string{"vless_tcp"},
+				})
+				if err != nil {
+					continue
+				}
+				accountID = newAccount.ID
+			} else {
+				accountID = mapping.AccountID
+			}
+			accountIDs = append(accountIDs, accountID)
+		}
+
+		if len(accountIDs) > 0 {
+			for _, aid := range accountIDs {
+				h.subAccRepo.AddAccount(id, aid)
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -124,31 +199,79 @@ func (h *SubscriptionHandler) Delete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
-// GetLink 生成订阅链接
 func (h *SubscriptionHandler) GetLink(c *gin.Context) {
 	id := c.Param("id")
-	sub, err := h.repo.GetByID(id)
+	sub, err := h.repo.GetByIDWithAccounts(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 
-	// 使用实际域名生成订阅链接
-	scheme := "http"
-	if c.Request.TLS != nil {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
-	link := fmt.Sprintf("%s/api/subscribe/%s", baseURL, sub.UUID)
+	publicURL := h.getPublicURL()
+	link := fmt.Sprintf("%s/api/subscribe/%s", publicURL, sub.UUID)
 	encoded := base64.StdEncoding.EncodeToString([]byte(link))
 
+	// 生成每个账号的订阅 URI (用于二维码)
+	accountLinks := make([]string, 0)
+	for _, acc := range sub.Accounts {
+		accountLinks = append(accountLinks, fmt.Sprintf("%s/api/subscribe/%s?aid=%s", publicURL, sub.UUID, acc.ID))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"link":    link,
-		"encoded": encoded,
+		"link":         link,
+		"encoded":      encoded,
+		"account_links": accountLinks,
 	})
 }
 
-// ServeSubscription 处理订阅请求 - 通过 UUID 提供订阅内容
+func (h *SubscriptionHandler) AddAccount(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		ServerID  string `json:"server_id" binding:"required"`
+		AccountID string `json:"account_id"`
+		AutoCreate bool  `json:"auto_create"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var accountID string
+	if req.AutoCreate {
+		newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
+			ServerID:  req.ServerID,
+			Email:    fmt.Sprintf("auto-%s", id[:8]),
+			Protocols: []string{"vless_tcp"},
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
+			return
+		}
+		accountID = newAccount.ID
+	} else {
+		accountID = req.AccountID
+	}
+
+	if err := h.subAccRepo.AddAccount(id, accountID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "account added"})
+}
+
+func (h *SubscriptionHandler) RemoveAccount(c *gin.Context) {
+	id := c.Param("id")
+	accountID := c.Param("accountId")
+
+	if err := h.subAccRepo.RemoveAccount(id, accountID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "account removed"})
+}
+
 func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 	uuid := c.Param("uuid")
 	sub, err := h.repo.GetByUUID(uuid)
@@ -161,46 +284,63 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
-	// 检查订阅是否启用
 	if !sub.Enable {
 		c.String(http.StatusForbidden, "Subscription is disabled")
 		return
 	}
 
-	// 获取关联的服务器
-	server, err := h.serverRepo.GetByID(sub.ServerID)
-	if err != nil {
-		c.String(http.StatusInternalServerError, "Server not found")
-		return
-	}
-
-	// 获取该服务器下的所有启用账号
-	accounts, err := h.accountRepo.ListByServerID(sub.ServerID)
+	accounts, err := h.subAccRepo.ListBySubscriptionID(sub.ID)
 	if err != nil || len(accounts) == 0 {
 		c.String(http.StatusNotFound, "No accounts available")
 		return
 	}
 
-	// 获取订阅格式类型 (默认 vless)
+	serverIDs := make([]string, 0)
+	serverMap := make(map[string]*model.Server)
+	for _, acc := range accounts {
+		if _, exists := serverMap[acc.ServerID]; !exists {
+			serverIDs = append(serverIDs, acc.ServerID)
+		}
+	}
+
+	realityConfigs := make(map[string]*service.RealityConfig)
+	for _, serverID := range serverIDs {
+		server, err := h.serverRepo.GetByID(serverID)
+		if err != nil {
+			continue
+		}
+		serverMap[serverID] = server
+		realityConfigs[serverID] = &service.RealityConfig{
+			Enabled:    server.RealityEnabled,
+			ServerName: server.RealityServerName,
+			PublicKey:  server.RealityPublicKey,
+			Port:       server.RealityPort,
+		}
+	}
+
 	subType := c.Query("format")
 	if subType == "" {
-		subType = "vless"
+		userAgent := c.GetHeader("User-Agent")
+		if strings.Contains(strings.ToLower(userAgent), "clash") {
+			subType = "clash_meta"
+		} else {
+			subType = "vless"
+		}
 	}
 
 	var content string
 	switch subType {
 	case "clash_meta":
-		content, _ = h.accountSvc.GenerateClashMetaSubscription(accounts, server.IP)
+		content, _ = h.accountSvc.GenerateClashMetaSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "text/plain; charset=utf-8")
 	case "singbox":
-		content, _ = h.accountSvc.GenerateSingBoxSubscription(accounts, server.IP)
+		content, _ = h.accountSvc.GenerateSingBoxSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "application/json; charset=utf-8")
 	default:
-		content = h.accountSvc.GenerateVLESSSubscription(accounts, server.IP)
+		content = h.accountSvc.GenerateVLESSSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "text/plain; charset=utf-8")
 	}
 
-	// 设置订阅缓存头 (1小时)
 	c.Header("Cache-Control", "public, max-age=3600")
 	c.Header("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; left=%d",
 		sub.TrafficUsed, sub.TrafficLimit, sub.TrafficLimit-sub.TrafficUsed))

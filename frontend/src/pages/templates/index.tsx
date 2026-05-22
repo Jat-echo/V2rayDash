@@ -8,9 +8,7 @@ interface Template {
   description: string
   config: {
     core: string
-    port: number
     uuid: string
-    server_name: string
     protocols: string[]
     agent_enabled: boolean
     report_interval: number
@@ -123,7 +121,6 @@ export default function TemplateList() {
     { title: '名称', dataIndex: 'name', key: 'name' },
     { title: '描述', dataIndex: 'description', key: 'description' },
     { title: '核心', dataIndex: ['config', 'core'], key: 'core' },
-    { title: '端口', dataIndex: ['config', 'port'], key: 'port' },
     { title: 'Agent', dataIndex: ['config', 'agent_enabled'], key: 'agent_enabled', render: (v: boolean) => v ? '是' : '否' },
     {
       title: '操作',
@@ -166,16 +163,6 @@ export default function TemplateList() {
               <Input.Group compact>
                 <Form.Item name={['config', 'core']} label="核心" initialValue="sing-box" style={{ width: 200 }}>
                   <Select options={CORE_OPTIONS} />
-                </Form.Item>
-                <Form.Item name={['config', 'port']} label="端口" initialValue={443} style={{ width: 120 }}>
-                  <Input type="number" />
-                </Form.Item>
-              </Input.Group>
-            </Form.Item>
-            <Form.Item noStyle>
-              <Input.Group compact>
-                <Form.Item name={['config', 'server_name']} label="Reality目标域名" initialValue="download-installer.cdn.mozilla.net" style={{ flex: 1 }}>
-                  <Input />
                 </Form.Item>
               </Input.Group>
             </Form.Item>

@@ -60,7 +60,7 @@ func NewSSHClient(host string, port int, user string, auth SSHAuth) (*SSHClient,
 		User: user,
 		Auth: []ssh.AuthMethod{authMethod},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout: 10 * time.Second,
+		Timeout: 60 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)

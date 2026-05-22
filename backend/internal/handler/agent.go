@@ -9,11 +9,15 @@ import (
 )
 
 type AgentHandler struct {
-	logRepo *repository.LogRepository
+	logRepo    *repository.LogRepository
+	settingRepo *repository.SettingRepository
 }
 
-func NewAgentHandler(logRepo *repository.LogRepository) *AgentHandler {
-	return &AgentHandler{logRepo: logRepo}
+func NewAgentHandler(logRepo *repository.LogRepository, settingRepo *repository.SettingRepository) *AgentHandler {
+	return &AgentHandler{
+		logRepo:    logRepo,
+		settingRepo: settingRepo,
+	}
 }
 
 func (h *AgentHandler) Heartbeat(c *gin.Context) {
@@ -41,9 +45,17 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 
 func (h *AgentHandler) GetConfig(c *gin.Context) {
 	serverID := c.Param("server_id")
+
+	// 获取控制中心URL设置
+	publicURL := "http://localhost:8080"
+	if setting, err := h.settingRepo.Get("public_url"); err == nil && setting != nil {
+		publicURL = setting.Value
+	}
+
 	// 返回该服务器的最新配置
 	c.JSON(http.StatusOK, gin.H{
-		"server_id":      serverID,
-		"control_center": "http://your-control-center:8080",
+		"server_id":        serverID,
+		"control_center":   publicURL,
+		"report_interval":  30,
 	})
 }

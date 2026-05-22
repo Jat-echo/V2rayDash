@@ -2,6 +2,7 @@ package handler
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -166,7 +167,8 @@ func (h *AccountHandler) Subscribe(c *gin.Context) {
 		return
 	}
 
-	server, err := h.serverRepo.GetByID(account.ServerID)
+	// 获取服务器完整信息（包括 Reality 配置）
+	server, err := h.serverRepo.GetByIDForInstall(account.ServerID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
@@ -176,15 +178,26 @@ func (h *AccountHandler) Subscribe(c *gin.Context) {
 		return
 	}
 
+	// 构造 Reality 配置
+	var realityConfig *service.RealityConfig
+	if server.RealityEnabled && server.RealityPublicKey != "" {
+		realityConfig = &service.RealityConfig{
+			Enabled:    true,
+			ServerName: server.RealityServerName,
+			PublicKey:  server.RealityPublicKey,
+			Port:       server.RealityPort,
+		}
+	}
+
 	var content string
 	var subErr error
 	switch subType {
 	case "clash_meta":
-		content, subErr = h.accountSvc.GenerateClashMetaSubscription([]*model.Account{account}, server.IP)
+		content, subErr = h.accountSvc.GenerateClashMetaSubscription([]*model.Account{account}, server.IP, realityConfig, server.Name)
 	case "singbox":
-		content, subErr = h.accountSvc.GenerateSingBoxSubscription([]*model.Account{account}, server.IP)
+		content, subErr = h.accountSvc.GenerateSingBoxSubscription([]*model.Account{account}, server.IP, realityConfig)
 	default:
-		content = h.accountSvc.GenerateVLESSSubscription([]*model.Account{account}, server.IP)
+		content = h.accountSvc.GenerateVLESSSubscription([]*model.Account{account}, server.IP, realityConfig)
 	}
 	if subErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
@@ -198,8 +211,8 @@ func (h *AccountHandler) Subscribe(c *gin.Context) {
 func (h *AccountHandler) Import(c *gin.Context) {
 	serverID := c.Param("id")
 
-	// 获取服务器信息以便创建 SSH 连接
-	server, err := h.serverRepo.GetByID(serverID)
+	// 获取服务器信息以便创建 SSH 连接（需要包含敏感字段）
+	server, err := h.serverRepo.GetByIDForInstall(serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
 		return
@@ -215,7 +228,7 @@ func (h *AccountHandler) Import(c *gin.Context) {
 
 	accounts, err := h.accountSvc.ImportFromRemote(serverID, auth)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to import accounts"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to import accounts: %v", err)})
 		return
 	}
 
@@ -233,7 +246,7 @@ func (h *AccountHandler) Sync(c *gin.Context) {
 		return
 	}
 
-	server, err := h.serverRepo.GetByID(account.ServerID)
+	server, err := h.serverRepo.GetByIDForInstall(account.ServerID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
 		return
@@ -257,7 +270,7 @@ func (h *AccountHandler) Sync(c *gin.Context) {
 func (h *AccountHandler) SyncAll(c *gin.Context) {
 	serverID := c.Param("id")
 
-	server, err := h.serverRepo.GetByID(serverID)
+	server, err := h.serverRepo.GetByIDForInstall(serverID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "server not found"})
 		return

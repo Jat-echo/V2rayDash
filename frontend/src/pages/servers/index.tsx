@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Card } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Card, Alert } from 'antd'
 import { serverAPI, templateAPI, accountAPI, Server, Template, TemplateConfig, Account } from '../../services/api'
 
 // Convert ANSI escape codes to HTML with colors
@@ -49,9 +49,7 @@ function getProtocolName(proto: string): string {
 
 const defaultConfig: TemplateConfig = {
   core: 'xray-core',
-  port: 443,
   uuid: '',
-  server_name: '',
   protocols: ['vless_reality_vision'],
   agent_enabled: false,
   report_interval: 30,
@@ -129,7 +127,9 @@ export default function ServerList() {
   const handleInstallClick = (server: Server) => {
     setSelectedServer(server)
     setSelectedTemplate(null)
-    setInstallConfig(defaultConfig)
+    setInstallConfig({
+      ...defaultConfig,
+    })
     setConfigModalVisible(true)
   }
 
@@ -141,17 +141,20 @@ export default function ServerList() {
     }
   }
 
-  const handleStartInstall = () => {
-    if (!selectedServer) return
+  const confirmReinstall = () => {
     setConfigModalVisible(false)
     setInstallOutput('')
     setInstallModalVisible(true)
     setInstalling(true)
 
-    fetch(`/api/servers/${selectedServer.id}/install`, {
+    fetch(`/api/servers/${selectedServer?.id}/install`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ config: installConfig })
+      body: JSON.stringify({
+        core: installConfig.core,
+        uuid: installConfig.uuid,
+        protocols: installConfig.protocols,
+      })
     }).then(response => {
       if (!response.ok) {
         setInstallOutput('\n❌ 连接失败，状态码: ' + response.status)
@@ -367,10 +370,17 @@ export default function ServerList() {
         title={`配置安装 - ${selectedServer?.name || ''}`}
         open={configModalVisible}
         onCancel={() => setConfigModalVisible(false)}
-        onOk={handleStartInstall}
+        onOk={confirmReinstall}
         okText="开始安装"
         cancelText="取消"
       >
+        <Alert
+          message="警告：重新安装会覆盖远程服务器上的所有配置"
+          description="远程服务器的现有账号、协议配置会被清除。控制中心保存的账号不受影响。建议重新安装前先从远程导入账号。"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
         <Form layout="vertical">
           <Form.Item label="选择模板">
             <Select
@@ -396,22 +406,6 @@ export default function ServerList() {
               <Select.Option value="trojan">Trojan</Select.Option>
               <Select.Option value="hysteria2">Hysteria2</Select.Option>
             </Select>
-          </Form.Item>
-
-          <Form.Item label="端口">
-            <Input
-              type="number"
-              value={installConfig.port}
-              onChange={(e) => setInstallConfig({ ...installConfig, port: parseInt(e.target.value) || 443 })}
-            />
-          </Form.Item>
-
-          <Form.Item label="服务器名称 (SNI)">
-            <Input
-              value={installConfig.server_name}
-              onChange={(e) => setInstallConfig({ ...installConfig, server_name: e.target.value })}
-              placeholder="例如: www.apple.com"
-            />
           </Form.Item>
 
           <Form.Item label="UUID (留空自动生成)">

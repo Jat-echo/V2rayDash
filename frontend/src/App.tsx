@@ -6,6 +6,7 @@ import SubscriptionList from './pages/subscriptions'
 import Monitor from './pages/monitor'
 import Logs from './pages/logs'
 import TemplateList from './pages/templates'
+import Settings from './pages/settings'
 
 const { Content } = Layout
 
@@ -46,12 +47,20 @@ const TemplateIcon = () => (
   </svg>
 )
 
+const SettingsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+  </svg>
+)
+
 const navItems = [
   { path: '/servers', label: '服务器', icon: <ServerIcon /> },
   { path: '/subscriptions', label: '订阅', icon: <SubIcon /> },
   { path: '/templates', label: '模板', icon: <TemplateIcon /> },
   { path: '/monitor', label: '监控', icon: <MonitorIcon /> },
   { path: '/logs', label: '日志', icon: <LogIcon /> },
+  { path: '/settings', label: '设置', icon: <SettingsIcon /> },
 ]
 
 function App() {
@@ -102,6 +111,7 @@ function App() {
               <Route path="/monitor" element={<Monitor />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/templates" element={<TemplateList />} />
+              <Route path="/settings" element={<Settings />} />
             </Routes>
           </Content>
         </Layout>

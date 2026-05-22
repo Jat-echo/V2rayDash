@@ -17,6 +17,8 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 	})
 
 	logRepo := repository.NewLogRepository(db.DB)
+	settingRepo := repository.NewSettingRepository(db.DB)
+	settingHandler := NewSettingHandler(settingRepo)
 
 	// 公开订阅接口 (无需认证)
 	subHandler := NewSubscriptionHandler(db.DB)
@@ -39,14 +41,17 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 
 		// 订阅管理
 		api.GET("/subscriptions", subHandler.List)
+		api.GET("/subscriptions/full", subHandler.ListWithAccounts)
 		api.POST("/subscriptions", subHandler.Create)
 		api.GET("/subscriptions/:id", subHandler.Get)
 		api.PUT("/subscriptions/:id", subHandler.Update)
 		api.DELETE("/subscriptions/:id", subHandler.Delete)
 		api.GET("/subscriptions/:id/link", subHandler.GetLink)
+		api.POST("/subscriptions/:id/accounts", subHandler.AddAccount)
+		api.DELETE("/subscriptions/:id/accounts/:accountId", subHandler.RemoveAccount)
 
 		// Agent 通信
-		agentHandler := NewAgentHandler(logRepo)
+		agentHandler := NewAgentHandler(logRepo, settingRepo)
 		api.POST("/agent/heartbeat", agentHandler.Heartbeat)
 		api.GET("/agent/config/:server_id", agentHandler.GetConfig)
 
@@ -68,6 +73,11 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		// 安装管理
 		installHandler := NewInstallHandler("/home/jat-id/Project/V2rayDash/install.sh", NewServerHandler(db.DB).repo)
 		api.POST("/servers/:id/install", installHandler.StartInstall)
+
+		// 系统设置
+		api.GET("/settings/public-url", settingHandler.GetPublicURL)
+		api.PUT("/settings/public-url", settingHandler.UpdatePublicURL)
+		api.GET("/settings/public-ip", settingHandler.GetPublicIP)
 	}
 
 	// 健康检查
