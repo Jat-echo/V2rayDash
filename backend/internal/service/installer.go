@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -199,14 +198,30 @@ func (i *Installer) fetchRealityConfig(client *ssh.SSHClient, core, serverName s
 	// 如果从输出解析失败，尝试读取配置文件
 	if publicKey == "" {
 		// 优先读取 sing-box 的 reality_key 文件
-		singBoxKeyPath := "/etc/v2ray-agent/sing-box/conf/config/reality_key"
-		content, err := client.ReadRemoteFile(singBoxKeyPath)
-		if err == nil && len(content) > 0 {
-			re := regexp.MustCompile(`publicKey[:\s]*(.+)`)
-			matches := re.FindStringSubmatch(content)
-			if len(matches) >= 2 {
-				publicKey = cleanANSICodes(strings.TrimSpace(matches[1]))
-				realityServerName = cleanANSICodes(serverName)
+		singBoxKeyPaths := []string{
+			"/etc/v2ray-agent/sing-box/conf/config/reality_key",
+			"/etc/v2ray-agent/sing-box/config/reality_key",
+		}
+		for _, singBoxKeyPath := range singBoxKeyPaths {
+			content, err := client.ReadRemoteFile(singBoxKeyPath)
+			if err == nil && len(content) > 0 {
+				// 直接提取 publicKey:xxx 格式
+				re := regexp.MustCompile(`publicKey[:\s]*(.+)`)
+				matches := re.FindStringSubmatch(content)
+				if len(matches) >= 2 {
+					publicKey = cleanANSICodes(strings.TrimSpace(matches[1]))
+					if publicKey != "" {
+						realityServerName = cleanANSICodes(serverName)
+						break
+					}
+				}
+				// 如果不是 publicKey: 格式，尝试直接使用整行作为 publicKey
+				trimmed := strings.TrimSpace(content)
+				if len(trimmed) > 20 { // publicKey 一般比较长
+					publicKey = trimmed
+					realityServerName = cleanANSICodes(serverName)
+					break
+				}
 			}
 		}
 	}
@@ -217,38 +232,28 @@ func (i *Installer) fetchRealityConfig(client *ssh.SSHClient, core, serverName s
 		xrayPaths := []string{
 			"/etc/v2ray-agent/xray/conf/07_VLESS_vision_reality_inbounds.json",
 			"/etc/v2ray-agent/xray/conf/07_VLESS_reality_vision_inbounds.json",
-			"/etc/v2ray-agent/xray/conf/07_VLESS_vision_reality_inbounds.toml",
 			"/etc/v2ray-agent/xray/conf/07_VLESS_vision_reality_inbounds",
 			"/etc/v2ray-agent/xray/conf/07_VLESS_TCP_inbounds.json",
 			"/etc/v2ray-agent/xray/conf/vLESS_vision_reality_inbounds.json",
+			"/etc/v2ray-agent/xray/config.json",
 		}
 		for _, xrayPath := range xrayPaths {
 			content, err := client.ReadRemoteFile(xrayPath)
 			if err != nil {
 				continue
 			}
-			// 尝试解析JSON格式
-			var config struct {
-				Inbounds []struct {
-					StreamSettings struct {
-						RealitySettings struct {
-							PublicKey   string   `json:"publicKey"`
-							ServerNames []string `json:"serverNames"`
-						} `json:"realitySettings"`
-					} `json:"streamSettings"`
-				} `json:"inbounds"`
-			}
-			if err := json.Unmarshal([]byte(content), &config); err != nil {
-				continue
-			}
-			if len(config.Inbounds) > 0 {
-				publicKey = config.Inbounds[0].StreamSettings.RealitySettings.PublicKey
-				if len(config.Inbounds[0].StreamSettings.RealitySettings.ServerNames) > 0 {
-					realityServerName = config.Inbounds[0].StreamSettings.RealitySettings.ServerNames[0]
+			// 尝试解析JSON格式 - 从 realitySettings.publicKey 提取
+			re := regexp.MustCompile(`"publicKey"\s*:\s*"([^"]+)"`)
+			matches := re.FindStringSubmatch(content)
+			if len(matches) >= 2 {
+				publicKey = matches[1]
+				// 同时提取 serverNames
+				sniRe := regexp.MustCompile(`"serverNames"\s*:\s*\[\s*"([^"]+)"`)
+				sniMatches := sniRe.FindStringSubmatch(content)
+				if len(sniMatches) >= 2 {
+					realityServerName = sniMatches[1]
 				}
-				if publicKey != "" {
-					break
-				}
+				break
 			}
 		}
 	}
