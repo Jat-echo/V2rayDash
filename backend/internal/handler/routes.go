@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -12,18 +13,30 @@ import (
 )
 
 func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
-	// 获取安装脚本路径，默认值兼容开发和生产环境
+	// 获取安装脚本路径
+	// 优先级：环境变量 > 开发目录检查 > 生产目录
 	installScriptPath := cfg.InstallScriptPath
 	if installScriptPath == "" {
-		// 开发环境和工作目录
 		cwd, _ := os.Getwd()
-		devPath := filepath.Join(cwd, "scripts", "install-agent.sh")
-		prodPath := "/opt/v2ray-dash/scripts/install-agent.sh"
-		if _, err := os.Stat(devPath); err == nil {
-			installScriptPath = devPath
-		} else {
-			installScriptPath = prodPath
+		possiblePaths := []string{
+			filepath.Join(cwd, "scripts", "install-agent.sh"),
+			filepath.Join(cwd, "..", "scripts", "install-agent.sh"),
+			"/opt/v2ray-dash/scripts/install-agent.sh",
 		}
+		for _, p := range possiblePaths {
+			if _, err := os.Stat(p); err == nil {
+				installScriptPath = p
+				break
+			}
+		}
+		if installScriptPath == "" {
+			installScriptPath = possiblePaths[0]
+			log.Printf("[WARN] 安装脚本路径不存在，使用开发路径: %s", installScriptPath)
+		} else {
+			log.Printf("[INFO] 使用安装脚本路径: %s", installScriptPath)
+		}
+	} else {
+		log.Printf("[INFO] 使用环境变量配置的安装脚本路径: %s", installScriptPath)
 	}
 	// CORS
 	r.Use(func(c *gin.Context) {

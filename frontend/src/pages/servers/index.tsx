@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Card, Alert } from 'antd'
-import { serverAPI, templateAPI, accountAPI, Server, Template, TemplateConfig, Account } from '../../services/api'
+import { serverAPI, accountAPI, Server, Account } from '../../services/api'
 
 // Convert ANSI escape codes to HTML with colors
 function ansiToHtml(text: string): string {
@@ -47,25 +47,21 @@ function getProtocolName(proto: string): string {
   return protocolNames[proto] || proto
 }
 
-const defaultConfig: TemplateConfig = {
+const defaultConfig = {
   core: 'xray-core',
   uuid: '',
   protocols: ['vless_reality_vision'],
-  agent_enabled: false,
-  report_interval: 30,
 }
 
 export default function ServerList() {
   const [servers, setServers] = useState<Server[]>([])
-  const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
   const [configModalVisible, setConfigModalVisible] = useState(false)
   const [installModalVisible, setInstallModalVisible] = useState(false)
   const [installOutput, setInstallOutput] = useState('')
   const [selectedServer, setSelectedServer] = useState<Server | null>(null)
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
-  const [installConfig, setInstallConfig] = useState<TemplateConfig>(defaultConfig)
+  const [installConfig, setInstallConfig] = useState(defaultConfig)
   const [form] = Form.useForm()
   const [sshKeyType, setSshKeyType] = useState<string>('key')
   const [installing, setInstalling] = useState(false)
@@ -77,7 +73,6 @@ export default function ServerList() {
 
   useEffect(() => {
     loadServers()
-    loadTemplates()
   }, [])
 
   // 自动滚动到最新输出
@@ -97,15 +92,6 @@ export default function ServerList() {
       setServers([])
     } finally {
       setLoading(false)
-    }
-  }
-
-  const loadTemplates = async () => {
-    try {
-      const data = await templateAPI.list()
-      setTemplates(data || [])
-    } catch (e) {
-      setTemplates([])
     }
   }
 
@@ -134,19 +120,10 @@ export default function ServerList() {
 
   const handleInstallClick = (server: Server) => {
     setSelectedServer(server)
-    setSelectedTemplate(null)
     setInstallConfig({
       ...defaultConfig,
     })
     setConfigModalVisible(true)
-  }
-
-  const handleTemplateChange = (templateId: number) => {
-    const tmpl = templates.find(t => t.id === templateId)
-    if (tmpl) {
-      setSelectedTemplate(tmpl)
-      setInstallConfig(tmpl.config)
-    }
   }
 
   const confirmReinstall = () => {
@@ -334,13 +311,6 @@ export default function ServerList() {
             <p>在线服务器</p>
           </div>
         </div>
-        <div className="stat-card animate-in animate-delay-3">
-          <div className="stat-icon sky">📋</div>
-          <div className="stat-content">
-            <h3>{templates.length}</h3>
-            <p>可用模板</p>
-          </div>
-        </div>
       </div>
 
       {/* Action Bar */}
@@ -412,18 +382,6 @@ export default function ServerList() {
           style={{ marginBottom: 16 }}
         />
         <Form layout="vertical">
-          <Form.Item label="选择模板">
-            <Select
-              placeholder="选择已有模板或留空自定义"
-              allowClear
-              onChange={(v) => v ? handleTemplateChange(v) : setSelectedTemplate(null)}
-            >
-              {templates.map(t => (
-                <Select.Option key={t.id} value={t.id}>{t.name}</Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-
           <Form.Item label="协议类型">
             <Select
               mode="multiple"

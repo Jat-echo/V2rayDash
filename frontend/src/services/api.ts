@@ -97,23 +97,6 @@ export interface NodeStatus {
   reported_at: string
 }
 
-export interface Template {
-  id: number
-  name: string
-  description: string
-  config: TemplateConfig
-  created_at: string
-  updated_at: string
-}
-
-export interface TemplateConfig {
-  core: string
-  uuid: string
-  protocols: string[]
-  agent_enabled: boolean
-  report_interval: number
-}
-
 export const serverAPI = {
   list: () => api.get<Server[]>('/servers').then(r => r.data),
   get: (id: string) => api.get<Server>(`/servers/${id}`).then(r => r.data),
@@ -135,13 +118,6 @@ export const subscriptionAPI = {
     api.post(`/subscriptions/${id}/accounts`, data),
   removeAccount: (id: string, accountId: string) =>
     api.delete(`/subscriptions/${id}/accounts/${accountId}`),
-}
-
-export const templateAPI = {
-  list: () => api.get<Template[]>('/templates').then(r => r.data),
-  create: (data: { name: string; description: string; config: TemplateConfig }) =>
-    api.post<Template>('/templates', data).then(r => r.data),
-  delete: (id: number) => api.delete(`/templates/${id}`),
 }
 
 export const logAPI = {

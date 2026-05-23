@@ -5,12 +5,10 @@ import ServerList from './pages/servers'
 import SubscriptionList from './pages/subscriptions'
 import Monitor from './pages/monitor'
 import Logs from './pages/logs'
-import TemplateList from './pages/templates'
 import Settings from './pages/settings'
 
 const { Content } = Layout
 
-// Icons as inline SVGs for consistency
 const ServerIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     <rect x="2" y="3" width="20" height="6" rx="1"/>
@@ -40,13 +38,6 @@ const LogIcon = () => (
   </svg>
 )
 
-const TemplateIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <rect x="3" y="3" width="18" height="18" rx="2"/>
-    <path d="M3 9h18M9 21V9"/>
-  </svg>
-)
-
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     <circle cx="12" cy="12" r="3"/>
@@ -57,7 +48,6 @@ const SettingsIcon = () => (
 const navItems = [
   { path: '/servers', label: '服务器', icon: <ServerIcon /> },
   { path: '/subscriptions', label: '订阅', icon: <SubIcon /> },
-  { path: '/templates', label: '模板', icon: <TemplateIcon /> },
   { path: '/monitor', label: '监控', icon: <MonitorIcon /> },
   { path: '/logs', label: '日志', icon: <LogIcon /> },
   { path: '/settings', label: '设置', icon: <SettingsIcon /> },
@@ -69,7 +59,6 @@ function App() {
   return (
     <BrowserRouter>
       <Layout className="app-layout">
-        {/* Sidebar */}
         <Layout.Sider
           width={240}
           collapsedWidth={72}
@@ -101,7 +90,6 @@ function App() {
           </nav>
         </Layout.Sider>
 
-        {/* Main Content */}
         <Layout className="app-main" style={{ marginLeft: collapsed ? 72 : 240 }}>
           <Content className="app-content" style={{ padding: '28px 32px' }}>
             <Routes>
@@ -110,7 +98,6 @@ function App() {
               <Route path="/subscriptions" element={<SubscriptionList />} />
               <Route path="/monitor" element={<Monitor />} />
               <Route path="/logs" element={<Logs />} />
-              <Route path="/templates" element={<TemplateList />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Content>
