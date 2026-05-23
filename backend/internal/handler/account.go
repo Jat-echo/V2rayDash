@@ -29,6 +29,10 @@ func NewAccountHandler(db *sql.DB) *AccountHandler {
 	}
 }
 
+func (h *AccountHandler) Repo() *repository.AccountRepository {
+	return h.accountRepo
+}
+
 func (h *AccountHandler) RegisterRoutes(r *gin.RouterGroup) {
 	accounts := r.Group("/servers/:id/accounts")
 	{

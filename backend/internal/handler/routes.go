@@ -86,7 +86,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		templateHandler.RegisterRoutes(api)
 
 		// 安装管理
-		installHandler := NewInstallHandler(installScriptPath, NewServerHandler(db.DB).repo)
+		installHandler := NewInstallHandler(installScriptPath, NewServerHandler(db.DB).repo, NewAccountHandler(db.DB).Repo())
 		api.POST("/servers/:id/install", installHandler.StartInstall)
 
 		// 系统设置

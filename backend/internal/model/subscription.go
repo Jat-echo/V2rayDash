@@ -4,6 +4,7 @@ import "time"
 
 type Subscription struct {
 	ID           string    `json:"id"`
+	ServerID     string    `json:"server_id"`
 	Name         string    `json:"name"`
 	UUID         string    `json:"uuid"`
 	Enable       bool      `json:"enable"`

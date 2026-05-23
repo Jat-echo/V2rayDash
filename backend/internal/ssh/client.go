@@ -3,6 +3,7 @@ package ssh
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -72,7 +73,8 @@ func NewSSHClient(host string, port int, user string, auth SSHAuth) (*SSHClient,
 	return &SSHClient{client: client}, nil
 }
 
-// Execute runs a command and writes output to the provided writers
+// Execute runs a command and writes output to the provided writers.
+// For streaming output, use ExecuteStreaming instead.
 func (c *SSHClient) Execute(cmd string, stdout io.Writer, stderr io.Writer) error {
 	session, err := c.client.NewSession()
 	if err != nil {
@@ -88,6 +90,131 @@ func (c *SSHClient) Execute(cmd string, stdout io.Writer, stderr io.Writer) erro
 		return fmt.Errorf("command '%s' failed: %w", cmd, err)
 	}
 	return nil
+}
+
+// ExecuteStreaming starts a command and streams output to writers in real-time.
+// It returns a Done channel that signals when execution completes.
+func (c *SSHClient) ExecuteStreaming(cmd string, stdout io.Writer, stderr io.Writer) (<-chan struct{}, error) {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create pipes for stdout and stderr
+	stdoutPipe, err := session.StdoutPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	stderrPipe, err := session.StderrPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+
+	done := make(chan struct{})
+
+	// Start the command
+	if err := session.Start(cmd); err != nil {
+		session.Close()
+		return nil, err
+	}
+
+	// Stream stdout to the provided writer
+	go func() {
+		io.Copy(stdout, stdoutPipe)
+	}()
+
+	// Stream stderr to the provided writer
+	go func() {
+		io.Copy(stderr, stderrPipe)
+	}()
+
+	// Wait for command completion
+	go func() {
+		session.Wait()
+		session.Close()
+		close(done)
+	}()
+
+	return done, nil
+}
+
+// ExecuteStreamingWithFlush is like ExecuteStreaming but calls Flush after each write.
+// This is useful for SSE streaming responses.
+func (c *SSHClient) ExecuteStreamingWithFlush(cmd string, w io.Writer, flusher http.Flusher) (<-chan struct{}, error) {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+
+	stdoutPipe, err := session.StdoutPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+	stderrPipe, err := session.StderrPipe()
+	if err != nil {
+		session.Close()
+		return nil, err
+	}
+
+	done := make(chan struct{})
+
+	if err := session.Start(cmd); err != nil {
+		session.Close()
+		return nil, err
+	}
+
+	// Create a writer that also flushes on each write
+	flushingWriter := &flushingWriter{w: w, flusher: flusher}
+
+	// Stream stdout
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stdoutPipe.Read(buf)
+			if n > 0 {
+				flushingWriter.Write(buf[:n])
+				flusher.Flush()
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	// Stream stderr
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := stderrPipe.Read(buf)
+			if n > 0 {
+				flushingWriter.Write(buf[:n])
+				flusher.Flush()
+			}
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	go func() {
+		session.Wait()
+		session.Close()
+		close(done)
+	}()
+
+	return done, nil
+}
+
+type flushingWriter struct {
+	w       io.Writer
+	flusher http.Flusher
+}
+
+func (fw *flushingWriter) Write(p []byte) (int, error) {
+	return fw.w.Write(p)
 }
 
 // ReadRemoteFile reads a file from the remote server via SFTP

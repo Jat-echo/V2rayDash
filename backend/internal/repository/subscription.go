@@ -19,15 +19,27 @@ func NewSubscriptionRepository(db *sql.DB) *SubscriptionRepository {
 
 func (r *SubscriptionRepository) Create(req *model.CreateSubscriptionRequest) (*model.Subscription, error) {
 	subUUID := generateUUID()
-	result := r.db.QueryRow(
-		`INSERT INTO subscriptions (name, uuid, traffic_limit)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at`,
-		req.Name, subUUID, req.TrafficLimit,
-	)
+
+	// 获取第一个账号关联的 server_id
+	var serverID string
+	for _, mapping := range req.AccountMappings {
+		if mapping.AccountID != "" {
+			var sid string
+			err := r.db.QueryRow(`SELECT server_id FROM accounts WHERE id = $1`, mapping.AccountID).Scan(&sid)
+			if err == nil {
+				serverID = sid
+				break
+			}
+		}
+	}
 
 	var s model.Subscription
-	err := result.Scan(&s.ID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
+	err := r.db.QueryRow(
+		`INSERT INTO subscriptions (name, uuid, traffic_limit, server_id)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id, server_id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at`,
+		req.Name, subUUID, req.TrafficLimit, serverID,
+	).Scan(&s.ID, &s.ServerID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -37,26 +49,26 @@ func (r *SubscriptionRepository) Create(req *model.CreateSubscriptionRequest) (*
 func (r *SubscriptionRepository) GetByID(id string) (*model.Subscription, error) {
 	var s model.Subscription
 	err := r.db.QueryRow(
-		`SELECT id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, server_id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
 		 FROM subscriptions WHERE id = $1`,
 		id,
-	).Scan(&s.ID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.ServerID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
 	return &s, err
 }
 
 func (r *SubscriptionRepository) GetByUUID(uuid string) (*model.Subscription, error) {
 	var s model.Subscription
 	err := r.db.QueryRow(
-		`SELECT id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, server_id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
 		 FROM subscriptions WHERE uuid = $1`,
 		uuid,
-	).Scan(&s.ID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.ServerID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
 	return &s, err
 }
 
 func (r *SubscriptionRepository) List() ([]*model.Subscription, error) {
 	rows, err := r.db.Query(
-		`SELECT id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, server_id, name, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
 		 FROM subscriptions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -67,7 +79,7 @@ func (r *SubscriptionRepository) List() ([]*model.Subscription, error) {
 	var subs []*model.Subscription
 	for rows.Next() {
 		var s model.Subscription
-		if err := rows.Scan(&s.ID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.ServerID, &s.Name, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
 		}
 		subs = append(subs, &s)
@@ -142,7 +154,7 @@ func (r *SubscriptionRepository) GetAccountIDs(subscriptionID string) ([]string,
 
 func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.SubscriptionWithAccounts, error) {
 	rows, err := r.db.Query(`
-		SELECT s.id, s.name, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
+		SELECT s.id, s.server_id, s.name, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
 		       a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
 		       srv.name, srv.ip
@@ -161,7 +173,7 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 	var subs []*model.SubscriptionWithAccounts
 
 	for rows.Next() {
-		var subID, subName, subUUID string
+		var subID, subServerID, subName, subUUID string
 		var subEnable bool
 		var subTrafficLimit, subTrafficUsed int64
 		var subCreated, subUpdated time.Time
@@ -173,7 +185,7 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 		var serverName, serverIP sql.NullString
 
 		err := rows.Scan(
-			&subID, &subName, &subUUID, &subEnable, &subTrafficLimit, &subTrafficUsed, &subCreated, &subUpdated,
+			&subID, &subServerID, &subName, &subUUID, &subEnable, &subTrafficLimit, &subTrafficUsed, &subCreated, &subUpdated,
 			&accID, &accServerID, &accUUID, &accEmail, &accProtocols, &accEnabled,
 			&accTrafficLimit, &accTrafficUsed, &accCreated, &accUpdated,
 			&serverName, &serverIP,
@@ -186,6 +198,7 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 			subMap[subID] = &model.SubscriptionWithAccounts{
 				Subscription: model.Subscription{
 					ID:           subID,
+					ServerID:     subServerID,
 					Name:         subName,
 					UUID:         subUUID,
 					Enable:       subEnable,
@@ -230,7 +243,7 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 
 func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.SubscriptionWithAccounts, error) {
 	row := r.db.QueryRow(`
-		SELECT s.id, s.name, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
+		SELECT s.id, s.server_id, s.name, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
 		       a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
 		       srv.name, srv.ip
@@ -241,7 +254,7 @@ func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.Subscrip
 		WHERE s.id = $1
 	`, id)
 
-	var subID, subName, subUUID string
+	var subID, subServerID, subName, subUUID string
 	var subEnable bool
 	var subTrafficLimit, subTrafficUsed int64
 	var subCreated, subUpdated time.Time
@@ -253,7 +266,7 @@ func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.Subscrip
 	var serverName, serverIP sql.NullString
 
 	err := row.Scan(
-		&subID, &subName, &subUUID, &subEnable, &subTrafficLimit, &subTrafficUsed, &subCreated, &subUpdated,
+		&subID, &subServerID, &subName, &subUUID, &subEnable, &subTrafficLimit, &subTrafficUsed, &subCreated, &subUpdated,
 		&accID, &accServerID, &accUUID, &accEmail, &accProtocols, &accEnabled,
 		&accTrafficLimit, &accTrafficUsed, &accCreated, &accUpdated,
 		&serverName, &serverIP,
@@ -265,6 +278,7 @@ func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.Subscrip
 	result := &model.SubscriptionWithAccounts{
 		Subscription: model.Subscription{
 			ID:           subID,
+			ServerID:     subServerID,
 			Name:         subName,
 			UUID:         subUUID,
 			Enable:       subEnable,

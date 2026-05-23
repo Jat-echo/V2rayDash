@@ -132,6 +132,11 @@ func (r *AccountRepository) Update(id string, req *model.UpdateAccountRequest) e
 		args = append(args, *req.TrafficLimit)
 		argNum++
 	}
+	if req.UUID != nil {
+		setClauses = append(setClauses, fmt.Sprintf("uuid = $%d", argNum))
+		args = append(args, *req.UUID)
+		argNum++
+	}
 
 	if len(setClauses) == 0 {
 		return nil

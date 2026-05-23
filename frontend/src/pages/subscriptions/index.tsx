@@ -284,38 +284,44 @@ export default function SubscriptionList() {
         footer={null}
         width={600}
       >
-        <Tabs activeKey={activeTab} onChange={setActiveTab} style={{ marginTop: 16 }}>
-          <Tabs.TabPane key="uri" tab="订阅 URI">
-            <div style={{ marginBottom: 16 }}>
-              <h4>订阅地址 (通用)</h4>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <Input value={currentLink} readOnly style={{ flex: 1 }} />
-                <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentLink)} />
-              </div>
-              <h4>Base64 编码 (ShadowRocket/Quantumult)</h4>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Input value={currentEncoded} readOnly style={{ flex: 1 }} />
-                <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentEncoded)} />
-              </div>
-            </div>
-          </Tabs.TabPane>
-          <Tabs.TabPane key="qrcode" tab="二维码">
-            <div style={{ textAlign: 'center' }}>
-              {currentSubInfo?.accounts?.map((acc, idx) => (
-                <div key={acc.id} style={{ marginBottom: 24 }}>
-                  <h4>{acc.server_name} - {acc.email}</h4>
-                  <QRCodeDisplay
-                    link={`${currentLink}&aid=${acc.id}&format=ss`}
-                    label={`${acc.server_name} / ${acc.email}`}
-                  />
+        <Tabs activeKey={activeTab} onChange={setActiveTab} style={{ marginTop: 16 }}
+          items={[
+            {
+              key: 'uri',
+              label: '订阅 URI',
+              children: <div style={{ marginBottom: 16 }}>
+                <h4>订阅地址 (通用)</h4>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <Input value={currentLink} readOnly style={{ flex: 1 }} />
+                  <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentLink)} />
                 </div>
-              ))}
-              {(!currentSubInfo?.accounts || currentSubInfo.accounts.length === 0) && (
-                <div style={{ padding: 40, color: '#999' }}>无账号信息</div>
-              )}
-            </div>
-          </Tabs.TabPane>
-        </Tabs>
+                <h4>Base64 编码 (ShadowRocket/Quantumult)</h4>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input value={currentEncoded} readOnly style={{ flex: 1 }} />
+                  <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentEncoded)} />
+                </div>
+              </div>
+            },
+            {
+              key: 'qrcode',
+              label: '二维码',
+              children: <div style={{ textAlign: 'center' }}>
+                {currentSubInfo?.accounts?.map((acc, idx) => (
+                  <div key={acc.id} style={{ marginBottom: 24 }}>
+                    <h4>{acc.server_name} - {acc.email}</h4>
+                    <QRCodeDisplay
+                      link={`${currentLink}&aid=${acc.id}&format=ss`}
+                      label={`${acc.server_name} / ${acc.email}`}
+                    />
+                  </div>
+                ))}
+                {(!currentSubInfo?.accounts || currentSubInfo.accounts.length === 0) && (
+                  <div style={{ padding: 40, color: '#999' }}>无账号信息</div>
+                )}
+              </div>
+            },
+          ]}
+        />
 
         <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
           <p>支持格式: ?format=vless (默认) | ?format=clash_meta | ?format=singbox | ?format=ss (ShadowRocket)</p>

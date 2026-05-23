@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS servers (
 -- 订阅表
 CREATE TABLE IF NOT EXISTS subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    server_id UUID REFERENCES servers(id) ON DELETE SET NULL,
     name VARCHAR(100) NOT NULL,
     uuid VARCHAR(36) NOT NULL UNIQUE,
     enable BOOLEAN DEFAULT true,

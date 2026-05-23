@@ -15,6 +15,7 @@ import (
 type InstallHandler struct {
 	scriptPath  string
 	serverRepo  *repository.ServerRepository
+	accountRepo *repository.AccountRepository
 }
 
 type InstallRequest struct {
@@ -24,10 +25,11 @@ type InstallRequest struct {
 	Protocols  []string `json:"protocols"`
 }
 
-func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepository) *InstallHandler {
+func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepository, accountRepo *repository.AccountRepository) *InstallHandler {
 	return &InstallHandler{
-		scriptPath: scriptPath,
-		serverRepo: serverRepo,
+		scriptPath:  scriptPath,
+		serverRepo:  serverRepo,
+		accountRepo: accountRepo,
 	}
 }
 
@@ -95,14 +97,24 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	// Create installer
 	installer := service.NewInstaller(serverID, server.IP, server.SSHPort, server.SSHUser, auth, h.scriptPath)
 
-	// Execute installation (output streams directly to HTTP)
-	result := installer.Install(c.Writer, installConfig)
-	flusher.Flush()
+	// Execute installation with streaming output
+	result := installer.InstallStreaming(flusher, installConfig)
 
 	if !result.Success {
 		fmt.Fprintf(c.Writer, "\n[ERROR] %s\n", result.Error)
 		flusher.Flush()
 		return
+	}
+
+	// 如果安装生成了新 UUID，同步到第一个账号
+	if result.GeneratedUUID != "" && req.UUID == "" {
+		accounts, err := h.accountRepo.ListByServerID(serverID)
+		if err == nil && len(accounts) > 0 {
+			firstAccount := accounts[0]
+			h.accountRepo.Update(firstAccount.ID, &model.UpdateAccountRequest{UUID: &result.GeneratedUUID})
+			fmt.Fprintf(c.Writer, "\n[OK] 已同步新UUID到账号: %s\n", result.GeneratedUUID)
+			flusher.Flush()
+		}
 	}
 
 	// 安装成功后，保存 Reality 配置到服务器记录

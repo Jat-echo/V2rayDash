@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,8 +15,9 @@ import (
 type InstallResult struct {
 	Success       bool
 	Error         string
-	RealityConfig *RealityConfig // Reality配置（如果启用了Reality协议）
-	RealityPort   int            // Reality端口
+	GeneratedUUID string            // 安装脚本生成的UUID
+	RealityConfig *RealityConfig    // Reality配置（如果启用了Reality协议）
+	RealityPort   int               // Reality端口
 }
 
 type InstallConfig struct {
@@ -114,10 +116,20 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 		return &InstallResult{Success: false, Error: fmt.Sprintf("安装执行失败: %v", err)}
 	}
 
+	// 解析安装输出
+	cleanedOutput := cleanANSICodes(installOutput.String())
+
+	// 解析安装输出中的 UUID（格式：---> UUID: xxxxxxxx-xxxx-xxxx）
+	generatedUUID := ""
+	uuidRe := regexp.MustCompile(`--->\s*UUID[:\s]*([a-fA-F0-9-]+)`)
+	if matches := uuidRe.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
+		generatedUUID = strings.TrimSpace(matches[1])
+	}
+
 	// 解析安装输出中的端口（格式：---> 端口: 21313）
 	realityPort := 443 // 默认端口
 	portRe := regexp.MustCompile(`--->\s*端口[:\s]*(\d+)`)
-	if matches := portRe.FindStringSubmatch(installOutput.String()); len(matches) >= 2 {
+	if matches := portRe.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
 		if port, err := strconv.Atoi(matches[1]); err == nil {
 			realityPort = port
 		}
@@ -125,8 +137,8 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 
 	fmt.Fprintf(output, "\n[%s] ✓ 安装完成，正在获取Reality配置...\n", time.Now().Format("15:04:05"))
 
-	// 5. 获取 Reality 配置（传入安装输出用于解析 publicKey）
-	realityConfig, err := i.fetchRealityConfig(sshClient, config.Core, config.ServerName, installOutput.String())
+	// 5. 获取 Reality 配置
+	realityConfig, err := i.fetchRealityConfig(sshClient, config.Core, config.ServerName, cleanedOutput)
 	if err != nil {
 		fmt.Fprintf(output, "[%s] 警告: 获取Reality配置失败: %v\n", time.Now().Format("15:04:05"), err)
 	}
@@ -140,12 +152,13 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 
 	return &InstallResult{
 		Success:       true,
-		RealityConfig: realityConfig,
-		RealityPort:   realityPort,
+		GeneratedUUID:  generatedUUID,
+		RealityConfig:   realityConfig,
+		RealityPort:     realityPort,
 	}
 }
 
-// cleanANSICodes 清理 ANSI 转义序列
+// InstallStreaming 执行安装并实时流式输出到 HTTP 响应
 func cleanANSICodes(s string) string {
 	// 移除 ANSI 颜色转义序列
 	s = strings.ReplaceAll(s, "\x1B[0m", "")
@@ -165,6 +178,127 @@ func cleanANSICodes(s string) string {
 	// 清理常见的残留字符
 	s = strings.TrimSpace(s)
 	return s
+}
+
+// InstallStreaming 执行安装并实时流式输出到 HTTP 响应
+func (i *Installer) InstallStreaming(flusher http.Flusher, config *InstallConfig) *InstallResult {
+	output := &streamingWriter{flusher: flusher}
+
+	// 1. 连接 SSH
+	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.host, i.port)
+	sshClient, err := ssh.NewSSHClient(i.host, i.port, i.user, i.auth)
+	if err != nil {
+		fmt.Fprintf(output, "[ERROR] SSH连接失败: %v\n", err)
+		return &InstallResult{Success: false, Error: fmt.Sprintf("SSH连接失败: %v", err)}
+	}
+	defer sshClient.Close()
+	fmt.Fprintf(output, "[%s] SSH连接成功\n", time.Now().Format("15:04:05"))
+
+	// 2. 上传脚本
+	fmt.Fprintf(output, "[%s] 正在上传安装脚本...\n", time.Now().Format("15:04:05"))
+	sftpClient, err := ssh.NewSFTPClient(sshClient)
+	if err != nil {
+		fmt.Fprintf(output, "[ERROR] SFTP连接失败: %v\n", err)
+		return &InstallResult{Success: false, Error: fmt.Sprintf("SFTP连接失败: %v", err)}
+	}
+	defer func() {
+		if sftpClient != nil {
+			sftpClient.Close()
+		}
+	}()
+
+	remotePath := "/tmp/v2ray_install.sh"
+	if err := sftpClient.UploadFile(i.scriptPath, remotePath); err != nil {
+		fmt.Fprintf(output, "[ERROR] 上传脚本失败: %v\n", err)
+		return &InstallResult{Success: false, Error: fmt.Sprintf("上传脚本失败: %v", err)}
+	}
+	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
+
+	// 3. 构建安装命令参数
+	var args []string
+	if config.Core == "sing-box" {
+		args = append(args, "--core sing-box")
+	} else {
+		args = append(args, "--core xray")
+	}
+	if len(config.Protocols) > 0 {
+		args = append(args, fmt.Sprintf("--protocol %s", config.Protocols[0]))
+	}
+	if config.UUID != "" {
+		args = append(args, fmt.Sprintf("--uuid %s", config.UUID))
+	}
+	if config.ServerName != "" {
+		args = append(args, fmt.Sprintf("--server-name %s", config.ServerName))
+	}
+
+	// 4. 执行安装
+	fmt.Fprintf(output, "[%s] 正在执行安装脚本...\n", time.Now().Format("15:04:05"))
+	fmt.Fprintf(output, "[%s] 参数: %s\n", time.Now().Format("15:04:05"), strings.Join(args, " "))
+
+	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"3\\n1\\n\" | bash %s %s' /dev/null", remotePath, remotePath, strings.Join(args, " "))
+
+	done, err := sshClient.ExecuteStreamingWithFlush(cmd, output, flusher)
+	if err != nil {
+		fmt.Fprintf(output, "[ERROR] 启动安装命令失败: %v\n", err)
+		return &InstallResult{Success: false, Error: fmt.Sprintf("安装执行失败: %v", err)}
+	}
+	<-done
+
+	cleanedOutput := cleanANSICodes(output.String())
+
+	// 解析 UUID
+	generatedUUID := ""
+	uuidRe := regexp.MustCompile(`--->\s*UUID[:\s]*([a-fA-F0-9-]+)`)
+	if matches := uuidRe.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
+		generatedUUID = strings.TrimSpace(matches[1])
+	}
+
+	// 解析端口
+	realityPort := 443
+	portRe := regexp.MustCompile(`--->\s*端口[:\s]*(\d+)`)
+	if matches := portRe.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
+		if port, err := strconv.Atoi(matches[1]); err == nil {
+			realityPort = port
+		}
+	}
+
+	fmt.Fprintf(output, "\n[%s] ✓ 安装完成，正在获取Reality配置...\n", time.Now().Format("15:04:05"))
+
+	realityConfig, err := i.fetchRealityConfig(sshClient, config.Core, config.ServerName, cleanedOutput)
+	if err != nil {
+		fmt.Fprintf(output, "[WARN] 获取Reality配置失败: %v\n", err)
+	}
+
+	if realityConfig != nil {
+		fmt.Fprintf(output, "[%s] ✓ Reality配置获取成功\n", time.Now().Format("15:04:05"))
+		fmt.Fprintf(output, "[%s]   ServerName: %s\n", time.Now().Format("15:04:05"), realityConfig.ServerName)
+		fmt.Fprintf(output, "[%s]   PublicKey: %s\n", time.Now().Format("15:04:05"), realityConfig.PublicKey)
+		fmt.Fprintf(output, "[%s]   Port: %d\n", time.Now().Format("15:04:05"), realityPort)
+	}
+
+	return &InstallResult{
+		Success:       true,
+		GeneratedUUID: generatedUUID,
+		RealityConfig: realityConfig,
+		RealityPort:   realityPort,
+	}
+}
+
+type streamingWriter struct {
+	buffer  strings.Builder
+	flusher http.Flusher
+}
+
+func (w *streamingWriter) Write(p []byte) (int, error) {
+	n, err := w.buffer.Write(p)
+	if w.flusher != nil {
+		w.flusher.Flush()
+	}
+	return n, err
+}
+
+func (w *streamingWriter) String() string {
+	return w.buffer.String()
 }
 
 // fetchRealityConfig 从远程服务器获取 Reality 配置

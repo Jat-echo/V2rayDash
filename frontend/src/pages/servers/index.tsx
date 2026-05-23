@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Card, Alert } from 'antd'
 import { serverAPI, templateAPI, accountAPI, Server, Template, TemplateConfig, Account } from '../../services/api'
 
@@ -73,11 +73,19 @@ export default function ServerList() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedServerForAccounts, setSelectedServerForAccounts] = useState<Server | null>(null)
   const [addAccountForm] = Form.useForm()
+  const installOutputRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadServers()
     loadTemplates()
   }, [])
+
+  // 自动滚动到最新输出
+  useEffect(() => {
+    if (installOutputRef.current) {
+      installOutputRef.current.scrollTop = installOutputRef.current.scrollHeight
+    }
+  }, [installOutput])
 
   const loadServers = async () => {
     setLoading(true)
@@ -161,18 +169,40 @@ export default function ServerList() {
         setInstalling(false)
         return
       }
-      response.text().then(text => {
-        setInstallOutput(text)
+
+      // 使用 ReadableStream 实时读取 SSE 流
+      const reader = response.body?.getReader()
+      if (!reader) {
+        setInstallOutput('\n❌ 浏览器不支持流式读取')
         setInstalling(false)
-        if (text.includes('✓') || text.includes('安装完成')) {
-          message.success('安装完成！')
-        } else if (text.includes('[ERROR]')) {
-          message.error('安装失败，请检查输出')
-        }
-      }).catch(err => {
-        setInstallOutput(`\n❌ 读取错误: ${err}\n`)
-        setInstalling(false)
-      })
+        return
+      }
+
+      const decoder = new TextDecoder()
+
+      function read() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            setInstalling(false)
+            // 检查安装结果
+            if (installOutput.includes('✓') || installOutput.includes('安装完成')) {
+              message.success('安装完成！')
+            } else if (installOutput.includes('[ERROR]')) {
+              message.error('安装失败，请检查输出')
+            }
+            return
+          }
+
+          const chunk = decoder.decode(value, { stream: true })
+          setInstallOutput(prev => prev + chunk)
+          read()
+        }).catch(err => {
+          setInstallOutput(prev => prev + `\n❌ 读取错误: ${err}\n`)
+          setInstalling(false)
+        })
+      }
+
+      read()
     }).catch(err => {
       setInstallOutput(`\n❌ 连接失败: ${err}\n`)
       setInstalling(false)
@@ -444,7 +474,9 @@ export default function ServerList() {
         ]}
       >
         {installing && <div style={{ color: '#888', marginBottom: 8 }}>正在安装，请稍候...（这可能需要10-30秒）</div>}
-        <pre style={{
+        <pre
+          ref={installOutputRef}
+          style={{
           background: '#1e1e1e',
           color: '#ffffff',
           padding: 16,

@@ -25,8 +25,9 @@ type CreateAccountRequest struct {
 }
 
 type UpdateAccountRequest struct {
-	Email       *string  `json:"email"`
-	Protocols   []string `json:"protocols"`
-	Enabled     *bool    `json:"enabled"`
+	Email        *string  `json:"email"`
+	UUID         *string  `json:"uuid"`
+	Protocols    []string `json:"protocols"`
+	Enabled      *bool    `json:"enabled"`
 	TrafficLimit *int64   `json:"traffic_limit"`
 }
