@@ -1222,46 +1222,44 @@ func (s *AccountService) GenerateSingBoxSubscription(accounts []*model.Account, 
 		if !acc.Enabled {
 			continue
 		}
-		for range acc.Protocols {
-			var outbound map[string]interface{}
-			if reality != nil && reality.Enabled {
-				outbound = map[string]interface{}{
-					"tag":         acc.Email,
-					"type":       "vless",
-					"server":     serverIP,
-					"server_port": 443,
-					"uuid":       acc.UUID,
-					"flow":       "xtls-rprx-vision",
-					"tls": map[string]interface{}{
+		var outbound map[string]interface{}
+		if reality != nil && reality.Enabled {
+			outbound = map[string]interface{}{
+				"tag":         acc.Email,
+				"type":       "vless",
+				"server":     serverIP,
+				"server_port": 443,
+				"uuid":       acc.UUID,
+				"flow":       "xtls-rprx-vision",
+				"tls": map[string]interface{}{
+					"enabled":    true,
+					"server_name": reality.ServerName,
+					"utls": map[string]interface{}{
 						"enabled":    true,
-						"server_name": reality.ServerName,
-						"utls": map[string]interface{}{
-							"enabled":    true,
-							"fingerprint": "chrome",
-						},
-						"reality": map[string]interface{}{
-							"enabled":   true,
-							"public_key": reality.PublicKey,
-							"short_id":  "6ba85179e30d4fc2",
-						},
+						"fingerprint": "chrome",
 					},
-				}
-			} else {
-				outbound = map[string]interface{}{
-					"tag":         acc.Email,
-					"type":       "vless",
-					"server":     serverIP,
-					"server_port": 443,
-					"uuid":       acc.UUID,
-					"flow":       "xtls-rprx-vision",
-					"tls": map[string]interface{}{
-						"enabled":    true,
-						"server_name": serverIP,
+					"reality": map[string]interface{}{
+						"enabled":   true,
+						"public_key": reality.PublicKey,
+						"short_id":  "6ba85179e30d4fc2",
 					},
-				}
+				},
 			}
-			outbounds = append(outbounds, outbound)
+		} else {
+			outbound = map[string]interface{}{
+				"tag":         acc.Email,
+				"type":       "vless",
+				"server":     serverIP,
+				"server_port": 443,
+				"uuid":       acc.UUID,
+				"flow":       "xtls-rprx-vision",
+				"tls": map[string]interface{}{
+					"enabled":    true,
+					"server_name": serverIP,
+				},
+			}
 		}
+		outbounds = append(outbounds, outbound)
 	}
 
 	config := map[string]interface{}{
@@ -1438,6 +1436,13 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 	var serverName string
 	var publicKeyFound bool
 
+	// 获取现有账号列表（只查一次，避免N+1）
+	existingAccounts, _ := s.accountRepo.ListByServerID(serverID)
+	existingByUUID := make(map[string]*model.Account)
+	for _, acc := range existingAccounts {
+		existingByUUID[acc.UUID] = acc
+	}
+
 	for _, configPath := range configPaths {
 		content, err := client.ReadRemoteFile(configPath)
 		if err != nil {
@@ -1456,10 +1461,12 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 					} `json:"clients"`
 				} `json:"settings"`
 				StreamSettings struct {
-					ServerName string `json:"serverName"`
+					ServerName string   `json:"serverName"`
+					Security   string   `json:"security"`
 					RealitySettings struct {
-						PublicKey string `json:"publicKey"`
-						ServerName string `json:"serverName"`
+						PublicKey   string   `json:"publicKey"`
+						ServerNames []string `json:"serverNames"` // array, not string
+						Target      string   `json:"target"`
 					} `json:"realitySettings"`
 				} `json:"streamSettings"`
 			} `json:"inbounds"`
@@ -1475,37 +1482,47 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 				parsedPort = inbound.Port
 			}
 			// 记录 Reality publicKey 和 serverName
-			if inbound.StreamSettings.RealitySettings.PublicKey != "" && !publicKeyFound {
-				publicKey = inbound.StreamSettings.RealitySettings.PublicKey
-				// 优先从 realitySettings.serverName 获取，其次从 streamSettings.serverName 获取
-				if inbound.StreamSettings.RealitySettings.ServerName != "" {
-					serverName = inbound.StreamSettings.RealitySettings.ServerName
-				} else if inbound.StreamSettings.ServerName != "" {
-					serverName = inbound.StreamSettings.ServerName
+			rsPK := inbound.StreamSettings.RealitySettings.PublicKey
+			rsTarget := inbound.StreamSettings.RealitySettings.Target
+			ssSN := inbound.StreamSettings.ServerName
+			// rsSN is now []string, get first element
+			var rsSNStr string
+			if len(inbound.StreamSettings.RealitySettings.ServerNames) > 0 {
+				rsSNStr = inbound.StreamSettings.RealitySettings.ServerNames[0]
+			}
+			if rsPK != "" && !publicKeyFound {
+				publicKey = rsPK
+				// 优先从 realitySettings.serverNames 获取，其次从 streamSettings.serverName 获取，最后用 target
+				if rsSNStr != "" {
+					serverName = rsSNStr
+				} else if ssSN != "" {
+					serverName = ssSN
+				} else if rsTarget != "" {
+					// 从 target 提取 host:port 格式中的 host
+					if idx := strings.Index(rsTarget, ":"); idx > 0 {
+						serverName = rsTarget[:idx]
+					} else {
+						serverName = rsTarget
+					}
+				} else {
+					serverName = server.IP
 				}
 				publicKeyFound = true
 			}
 			for _, client := range inbound.Settings.Clients {
 				protocol := "vless_tcp"
 				// 如果有 Reality 设置，则为 Reality 协议
-				if inbound.StreamSettings.RealitySettings.PublicKey != "" {
+				if rsPK != "" {
 					protocol = "vless_reality_vision"
 				}
-				// 检查账号是否已存在
-				existingAccounts, _ := s.accountRepo.ListByServerID(serverID)
-				var existingAccount *model.Account
-				for _, existing := range existingAccounts {
-					if existing.UUID == client.ID {
-						existingAccount = existing
-						break
-					}
-				}
+				// 检查账号是否已存在（使用预加载的map）
+				existingAccount := existingByUUID[client.ID]
 
 				if existingAccount != nil {
 					// 账号已存在，更新信息
 					updateReq := &model.UpdateAccountRequest{
 						Email:     &client.Email,
-						Protocols: &[]string{protocol},
+						Protocols: []string{protocol},
 					}
 					s.accountRepo.Update(existingAccount.ID, updateReq)
 					// 获取更新后的账号
@@ -1532,10 +1549,7 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 	}
 
 	// 如果检测到 Reality 配置（publicKey 存在），更新服务器 Reality 配置
-	realityEnabled := false
-	if publicKeyFound {
-		realityEnabled = true
-	}
+	realityEnabled := publicKeyFound
 
 	// 如果解析到端口且检测到 Reality，更新服务器配置
 	if parsedPort > 0 && publicKeyFound {
@@ -1698,46 +1712,44 @@ func (s *AccountService) GenerateSingBoxSubscriptionMulti(accounts []*model.Acco
 		}
 		reality := realityConfigs[acc.ServerID]
 
-		for range acc.Protocols {
-			var outbound map[string]interface{}
-			if reality != nil && reality.Enabled {
-				outbound = map[string]interface{}{
-					"tag":         fmt.Sprintf("%s-%s", server.Name, acc.Email[:8]),
-					"type":       "vless",
-					"server":     server.IP,
-					"server_port": 443,
-					"uuid":       acc.UUID,
-					"flow":       "xtls-rprx-vision",
-					"tls": map[string]interface{}{
+		var outbound map[string]interface{}
+		if reality != nil && reality.Enabled {
+			outbound = map[string]interface{}{
+				"tag":         fmt.Sprintf("%s-%s", server.Name, acc.Email[:8]),
+				"type":       "vless",
+				"server":     server.IP,
+				"server_port": 443,
+				"uuid":       acc.UUID,
+				"flow":       "xtls-rprx-vision",
+				"tls": map[string]interface{}{
+					"enabled":    true,
+					"server_name": reality.ServerName,
+					"utls": map[string]interface{}{
 						"enabled":    true,
-						"server_name": reality.ServerName,
-						"utls": map[string]interface{}{
-							"enabled":    true,
-							"fingerprint": "chrome",
-						},
-						"reality": map[string]interface{}{
-							"enabled":   true,
-							"public_key": reality.PublicKey,
-							"short_id":  "6ba85179e30d4fc2",
-						},
+						"fingerprint": "chrome",
 					},
-				}
-			} else {
-				outbound = map[string]interface{}{
-					"tag":         fmt.Sprintf("%s-%s", server.Name, acc.Email[:8]),
-					"type":       "vless",
-					"server":     server.IP,
-					"server_port": 443,
-					"uuid":       acc.UUID,
-					"flow":       "xtls-rprx-vision",
-					"tls": map[string]interface{}{
-						"enabled":    true,
-						"server_name": server.IP,
+					"reality": map[string]interface{}{
+						"enabled":   true,
+						"public_key": reality.PublicKey,
+						"short_id":  "6ba85179e30d4fc2",
 					},
-				}
+				},
 			}
-			outbounds = append(outbounds, outbound)
+		} else {
+			outbound = map[string]interface{}{
+				"tag":         fmt.Sprintf("%s-%s", server.Name, acc.Email[:8]),
+				"type":       "vless",
+				"server":     server.IP,
+				"server_port": 443,
+				"uuid":       acc.UUID,
+				"flow":       "xtls-rprx-vision",
+				"tls": map[string]interface{}{
+					"enabled":    true,
+					"server_name": server.IP,
+				},
+			}
 		}
+		outbounds = append(outbounds, outbound)
 	}
 
 	config := map[string]interface{}{

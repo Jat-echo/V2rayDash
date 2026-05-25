@@ -2,7 +2,6 @@ package handler
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -58,23 +57,15 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	// 从数据库获取服务器信息（包括敏感字段）
 	server, err := h.serverRepo.GetByIDForInstall(serverID)
 	if err != nil {
-		log.Printf("[DEBUG] GetByIDForInstall failed: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
 		return
 	}
 
-	log.Printf("[DEBUG] Server from DB: ID=%s, Name=%s, IP=%s, SSHPort=%d, SSHUser=%s, SSHKeyType=%s",
-		server.ID, server.Name, server.IP, server.SSHPort, server.SSHUser, server.SSHKeyType)
-	log.Printf("[DEBUG] SSHPassword length: %d", len(server.SSHPassword))
-	log.Printf("[DEBUG] SSHKey length: %d", len(server.SSHKey))
-
 	// Create SSH auth based on stored credentials
 	var auth ssh.SSHAuth
 	if server.SSHKeyType == "password" {
-		log.Printf("[DEBUG] Using PasswordAuth")
 		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
 	} else {
-		log.Printf("[DEBUG] Using KeyAuth")
 		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
 	}
 

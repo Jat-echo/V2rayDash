@@ -24,17 +24,16 @@ type SubscriptionHandler struct {
 }
 
 func NewSubscriptionHandler(db *sql.DB) *SubscriptionHandler {
+	accountRepo := repository.NewAccountRepository(db)
+	serverRepo := repository.NewServerRepository(db)
 	h := &SubscriptionHandler{
 		repo:        repository.NewSubscriptionRepository(db),
 		subAccRepo:  repository.NewSubscriptionAccountRepository(db),
 		logRepo:     repository.NewLogRepository(db),
-		accountRepo: repository.NewAccountRepository(db),
-		serverRepo:  repository.NewServerRepository(db),
+		accountRepo: accountRepo,
+		serverRepo:  serverRepo,
 		settingRepo: repository.NewSettingRepository(db),
-		accountSvc: service.NewAccountService(
-			repository.NewAccountRepository(db),
-			repository.NewServerRepository(db),
-		),
+		accountSvc:  service.NewAccountService(accountRepo, serverRepo),
 	}
 	return h
 }
