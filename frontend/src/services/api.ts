@@ -118,6 +118,10 @@ export const subscriptionAPI = {
     api.post(`/subscriptions/${id}/accounts`, data),
   removeAccount: (id: string, accountId: string) =>
     api.delete(`/subscriptions/${id}/accounts/${accountId}`),
+  updateAccountOrder: (id: string, order: { id: string; sort_order: number }[]) =>
+    api.put(`/subscriptions/${id}/accounts/order`, order),
+  getAccounts: (id: string) =>
+    api.get<AccountWithServer[]>(`/subscriptions/${id}/accounts`).then(r => r.data),
 }
 
 export const logAPI = {

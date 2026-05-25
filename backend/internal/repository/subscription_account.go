@@ -76,10 +76,13 @@ func (r *SubscriptionAccountRepository) ListBySubscriptionID(subscriptionID stri
 	if accounts == nil {
 		accounts = []*model.Account{}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return accounts, nil
 }
 
-func (r *SubscriptionAccountRepository) GetAccountsWithServerInfo(subscriptionID string) ([]*model.AccountWithServerInfo, error) {
+func (r *SubscriptionAccountRepository) GetBySubscriptionOrdered(subscriptionID string) ([]*model.AccountWithServerInfo, error) {
 	rows, err := r.db.Query(`
 		SELECT a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
@@ -88,7 +91,7 @@ func (r *SubscriptionAccountRepository) GetAccountsWithServerInfo(subscriptionID
 		JOIN subscription_accounts sa ON a.id = sa.account_id
 		JOIN servers s ON a.server_id = s.id
 		WHERE sa.subscription_id = $1
-		ORDER BY a.created_at DESC
+		ORDER BY sa.sort_order ASC, a.created_at DESC
 	`, subscriptionID)
 	if err != nil {
 		return nil, err
@@ -110,6 +113,9 @@ func (r *SubscriptionAccountRepository) GetAccountsWithServerInfo(subscriptionID
 	if accounts == nil {
 		accounts = []*model.AccountWithServerInfo{}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return accounts, nil
 }
 
@@ -118,7 +124,7 @@ func (r *SubscriptionAccountRepository) DeleteBySubscription(subscriptionID stri
 	return err
 }
 
-func (r *SubscriptionAccountRepository) ReplaceAccounts(subscriptionID string, accountIDs []string) error {
+func (r *SubscriptionAccountRepository) ReplaceAccounts(subscriptionID string, accountIDs []string, sortOrders map[string]int) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
@@ -130,15 +136,28 @@ func (r *SubscriptionAccountRepository) ReplaceAccounts(subscriptionID string, a
 		return err
 	}
 
-	for _, accountID := range accountIDs {
+	for i, accountID := range accountIDs {
+		sortOrder := i
+		if so, ok := sortOrders[accountID]; ok {
+			sortOrder = so
+		}
 		_, err = tx.Exec(`
-			INSERT INTO subscription_accounts (subscription_id, account_id)
-			VALUES ($1, $2)
-		`, subscriptionID, accountID)
+			INSERT INTO subscription_accounts (subscription_id, account_id, sort_order)
+			VALUES ($1, $2, $3)
+		`, subscriptionID, accountID, sortOrder)
 		if err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+func (r *SubscriptionAccountRepository) UpdateSortOrder(subscriptionID string, accountID string, sortOrder int) error {
+	_, err := r.db.Exec(`
+		UPDATE subscription_accounts
+		SET sort_order = $1, updated_at = CURRENT_TIMESTAMP
+		WHERE subscription_id = $2 AND account_id = $3
+	`, sortOrder, subscriptionID, accountID)
+	return err
 }

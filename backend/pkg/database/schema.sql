@@ -50,7 +50,10 @@ CREATE TABLE IF NOT EXISTS subscription_accounts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
     account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    sort_order INT DEFAULT 0,
+    note VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT unique_subscription_per_account UNIQUE (subscription_id, account_id)
 );
 

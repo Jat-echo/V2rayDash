@@ -1433,6 +1433,10 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 
 	var accounts []*model.Account
 	var failed int
+	var parsedPort int
+	var publicKey string
+	var serverName string
+	var publicKeyFound bool
 
 	for _, configPath := range configPaths {
 		content, err := client.ReadRemoteFile(configPath)
@@ -1443,6 +1447,8 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 		// 尝试解析为标准格式
 		var config struct {
 			Inbounds []struct {
+				Port     int `json:"port"`
+				Listen   string `json:"listen"`
 				Settings struct {
 					Clients []struct {
 						ID    string `json:"id"`
@@ -1450,8 +1456,10 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 					} `json:"clients"`
 				} `json:"settings"`
 				StreamSettings struct {
+					ServerName string `json:"serverName"`
 					RealitySettings struct {
 						PublicKey string `json:"publicKey"`
+						ServerName string `json:"serverName"`
 					} `json:"realitySettings"`
 				} `json:"streamSettings"`
 			} `json:"inbounds"`
@@ -1462,12 +1470,52 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 		}
 
 		for _, inbound := range config.Inbounds {
+			// 记录端口（取第一个有效的）
+			if parsedPort == 0 && inbound.Port > 0 {
+				parsedPort = inbound.Port
+			}
+			// 记录 Reality publicKey 和 serverName
+			if inbound.StreamSettings.RealitySettings.PublicKey != "" && !publicKeyFound {
+				publicKey = inbound.StreamSettings.RealitySettings.PublicKey
+				// 优先从 realitySettings.serverName 获取，其次从 streamSettings.serverName 获取
+				if inbound.StreamSettings.RealitySettings.ServerName != "" {
+					serverName = inbound.StreamSettings.RealitySettings.ServerName
+				} else if inbound.StreamSettings.ServerName != "" {
+					serverName = inbound.StreamSettings.ServerName
+				}
+				publicKeyFound = true
+			}
 			for _, client := range inbound.Settings.Clients {
 				protocol := "vless_tcp"
 				// 如果有 Reality 设置，则为 Reality 协议
 				if inbound.StreamSettings.RealitySettings.PublicKey != "" {
 					protocol = "vless_reality_vision"
 				}
+				// 检查账号是否已存在
+				existingAccounts, _ := s.accountRepo.ListByServerID(serverID)
+				var existingAccount *model.Account
+				for _, existing := range existingAccounts {
+					if existing.UUID == client.ID {
+						existingAccount = existing
+						break
+					}
+				}
+
+				if existingAccount != nil {
+					// 账号已存在，更新信息
+					updateReq := &model.UpdateAccountRequest{
+						Email:     &client.Email,
+						Protocols: &[]string{protocol},
+					}
+					s.accountRepo.Update(existingAccount.ID, updateReq)
+					// 获取更新后的账号
+					updatedAccount, _ := s.accountRepo.GetByID(existingAccount.ID)
+					if updatedAccount != nil {
+						accounts = append(accounts, updatedAccount)
+					}
+					continue
+				}
+
 				account, err := s.accountRepo.Create(&model.CreateAccountRequest{
 					ServerID:  serverID,
 					UUID:      client.ID,
@@ -1481,6 +1529,22 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 				accounts = append(accounts, account)
 			}
 		}
+	}
+
+	// 如果检测到 Reality 配置（publicKey 存在），更新服务器 Reality 配置
+	realityEnabled := false
+	if publicKeyFound {
+		realityEnabled = true
+	}
+
+	// 如果解析到端口且检测到 Reality，更新服务器配置
+	if parsedPort > 0 && publicKeyFound {
+		s.serverRepo.Update(serverID, &model.UpdateServerRequest{
+			RealityEnabled:   &realityEnabled,
+			RealityPublicKey:  &publicKey,
+			RealityServerName: &serverName,
+			RealityPort:       &parsedPort,
+		})
 	}
 
 	if failed > 0 && len(accounts) == 0 {

@@ -119,19 +119,29 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 	// 解析安装输出
 	cleanedOutput := cleanANSICodes(installOutput.String())
 
-	// 解析安装输出中的 UUID（格式：---> UUID: xxxxxxxx-xxxx-xxxx）
+	// 解析安装输出中的 UUID（格式：---> UUID: xxxxxxxx-xxxx-xxxx 或 ---> UUID:xxxxxxxx-xxxx-xxxx）
 	generatedUUID := ""
 	uuidRe := regexp.MustCompile(`--->\s*UUID[:\s]*([a-fA-F0-9-]+)`)
 	if matches := uuidRe.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
 		generatedUUID = strings.TrimSpace(matches[1])
 	}
 
-	// 解析安装输出中的端口（格式：---> 端口: 21313）
+	// 解析安装输出中的端口（支持多种格式：---> 端口: 21313 或 ---> xxx端口：21313）
 	realityPort := 443 // 默认端口
-	portRe := regexp.MustCompile(`--->\s*端口[:\s]*(\d+)`)
+	portRe := regexp.MustCompile(`--->.*端口[：:]\s*(\d+)`)
 	if matches := portRe.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
 		if port, err := strconv.Atoi(matches[1]); err == nil {
 			realityPort = port
+		}
+	}
+
+	// 备用：直接从数字中提取端口（用于 ---> VLESS_Reality_Vision端口：21313 这种格式）
+	if realityPort == 443 {
+		portRe2 := regexp.MustCompile(`端口[：:]\s*(\d+)`)
+		if matches := portRe2.FindStringSubmatch(cleanedOutput); len(matches) >= 2 {
+			if port, err := strconv.Atoi(matches[1]); err == nil && port > 0 && port < 65536 {
+				realityPort = port
+			}
 		}
 	}
 

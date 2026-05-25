@@ -1,6 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Card, Tag, Checkbox, Tabs } from 'antd'
-import { CopyOutlined, QrcodeOutlined } from '@ant-design/icons'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Card, Tag, Checkbox, Tabs, Popconfirm } from 'antd'
+import { CopyOutlined, QrcodeOutlined, HolderOutlined } from '@ant-design/icons'
+import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import QRCode from 'qrcode'
 import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping } from '../../services/api'
 
@@ -21,12 +24,16 @@ export default function SubscriptionList() {
   const [form] = Form.useForm()
   const [selectedMappings, setSelectedMappings] = useState<AccountMapping[]>([])
   const [activeTab, setActiveTab] = useState('uri')
+  const [manageModalVisible, setManageModalVisible] = useState(false)
+  const [managedAccounts, setManagedAccounts] = useState<AccountWithServer[]>([])
+  const [manageSubscriptionId, setManageSubscriptionId] = useState<string>('')
+  const [addAccountModalVisible, setAddAccountModalVisible] = useState(false)
 
   useEffect(() => {
     loadData()
   }, [])
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true)
     try {
       const [subs, srvs] = await Promise.all([
@@ -35,9 +42,11 @@ export default function SubscriptionList() {
       ])
       setSubscriptions(subs || [])
 
+      const accountResults = await Promise.all(
+        srvs.map(srv => accountAPI.listByServer(srv.id).then(accs => ({ srv, accs })))
+      )
       const accountMap: Record<string, Account[]> = {}
-      for (const srv of srvs) {
-        const accs = await accountAPI.listByServer(srv.id)
+      for (const { srv, accs } of accountResults) {
         accountMap[srv.id] = accs || []
       }
       setAccounts(accountMap)
@@ -49,7 +58,7 @@ export default function SubscriptionList() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const handleAdd = async (values: any) => {
     if (selectedMappings.length === 0) {
@@ -99,11 +108,31 @@ export default function SubscriptionList() {
   }
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        message.success('已复制到剪贴板')
+      }).catch(() => {
+        fallbackCopy(text)
+      })
+    } else {
+      fallbackCopy(text)
+    }
+  }
+
+  const fallbackCopy = (text: string) => {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand('copy')
       message.success('已复制到剪贴板')
-    }).catch(() => {
+    } catch (err) {
       message.error('复制失败')
-    })
+    }
+    document.body.removeChild(textarea)
   }
 
   const handleServerSelect = (serverId: string, checked: boolean) => {
@@ -135,6 +164,58 @@ export default function SubscriptionList() {
     setModalVisible(true)
   }
 
+  const openManageModal = async (record: SubscriptionWithAccounts) => {
+    setManageSubscriptionId(record.id)
+    try {
+      const accounts = await subscriptionAPI.getAccounts(record.id)
+      setManagedAccounts(accounts || [])
+      setManageModalVisible(true)
+    } catch (e) {
+      message.error('加载账号失败')
+    }
+  }
+
+  const onDragEnd = async (result: DragEndEvent) => {
+    if (!result.destination) return
+
+    const items = Array.from(managedAccounts)
+    const [reorderedItem] = items.splice(result.source.index, 1)
+    items.splice(result.destination.index, 0, reorderedItem)
+
+    const previousAccounts = managedAccounts
+    setManagedAccounts(items)
+
+    const newOrder = items.map((acc, idx) => ({ id: acc.id, sort_order: idx }))
+    try {
+      await subscriptionAPI.updateAccountOrder(manageSubscriptionId, newOrder)
+    } catch (e) {
+      message.error('保存顺序失败')
+      setManagedAccounts(previousAccounts)
+    }
+  }
+
+  const handleRemoveAccount = async (accountId: string) => {
+    try {
+      await subscriptionAPI.removeAccount(manageSubscriptionId, accountId)
+      setManagedAccounts(managedAccounts.filter(acc => acc.id !== accountId))
+      message.success('移除成功')
+    } catch (e) {
+      message.error('移除失败')
+    }
+  }
+
+  const handleAddAccount = async (serverId: string, accountId: string) => {
+    try {
+      await subscriptionAPI.addAccount(manageSubscriptionId, { server_id: serverId, account_id: accountId })
+      message.success('添加成功')
+      const accounts = await subscriptionAPI.getAccounts(manageSubscriptionId)
+      setManagedAccounts(accounts || [])
+      setAddAccountModalVisible(false)
+    } catch (e) {
+      message.error('添加失败')
+    }
+  }
+
   const columns = [
     { title: '名称', dataIndex: 'name' },
     { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
@@ -142,7 +223,7 @@ export default function SubscriptionList() {
       title: '服务器/账号',
       render: (_: any, record: SubscriptionWithAccounts) => {
         if (!record.accounts || record.accounts.length === 0) {
-          return <Tag color="default">无关联账号</Tag>
+          return <Tag color="default">暂无可用节点，请联系管理员</Tag>
         }
         return (
           <Space direction="vertical" size={2}>
@@ -161,7 +242,16 @@ export default function SubscriptionList() {
       render: (_: any, record: SubscriptionWithAccounts) => (
         <Space>
           <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
-          <Button size="small" danger onClick={() => handleDelete(record.id)}>删除</Button>
+          <Button size="small" onClick={() => openManageModal(record)}>管理账号</Button>
+          <Popconfirm
+            title="确认删除"
+            description="确定要删除这个订阅吗？"
+            onConfirm={() => handleDelete(record.id)}
+            okText="确认"
+            cancelText="取消"
+          >
+            <Button size="small" danger>删除</Button>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -328,6 +418,130 @@ export default function SubscriptionList() {
           <p>客户端扫码可直接导入单个账号，或使用上方订阅 URI 导入全部账号</p>
         </div>
       </Modal>
+
+      {/* Manage Accounts Modal */}
+      <Modal
+        title="管理账号"
+        open={manageModalVisible}
+        onCancel={() => setManageModalVisible(false)}
+        footer={null}
+        width={600}
+      >
+        <div style={{ marginTop: 16 }}>
+          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button type="primary" onClick={() => setAddAccountModalVisible(true)}>
+              添加账号
+            </Button>
+          </div>
+
+          {managedAccounts.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+              暂无账号，请点击上方按钮添加
+            </div>
+          ) : (
+            <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <SortableContext items={managedAccounts.map(a => a.id)} strategy={verticalListSortingStrategy}>
+                {managedAccounts.map((acc) => (
+                  <SortableItem
+                    key={acc.id}
+                    id={acc.id}
+                    account={acc}
+                    onRemove={() => handleRemoveAccount(acc.id)}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
+      </Modal>
+
+      {/* Add Account Modal */}
+      <Modal
+        title="添加账号"
+        open={addAccountModalVisible}
+        onCancel={() => setAddAccountModalVisible(false)}
+        footer={null}
+        width={500}
+      >
+        <div style={{ marginTop: 16, maxHeight: 400, overflowY: 'auto' }}>
+          {servers.map(server => {
+            const serverAccounts = accounts[server.id] || []
+            const linkedAccountIds = managedAccounts.map(a => a.id)
+            const availableAccounts = serverAccounts.filter(acc => !linkedAccountIds.includes(acc.id))
+
+            return (
+              <div key={server.id} style={{
+                border: '1px solid #d9d9d9',
+                borderRadius: 4,
+                padding: 12,
+                marginBottom: 8,
+              }}>
+                <strong>{server.name}</strong> ({server.ip})
+                {availableAccounts.length === 0 ? (
+                  <div style={{ marginTop: 8, color: '#999' }}>无可用账号</div>
+                ) : (
+                  <div style={{ marginTop: 8 }}>
+                    {availableAccounts.map(acc => (
+                      <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span>{acc.email} {acc.enabled ? '' : '(已禁用)'}</span>
+                        <Button size="small" type="primary" onClick={() => handleAddAccount(server.id, acc.id)}>
+                          添加
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+// Sortable item component
+function SortableItem({ id, account, onRemove }: { id: string; account: AccountWithServer; onRemove: () => void }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        ...style,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px',
+        marginBottom: 8,
+        border: '1px solid #d9d9d9',
+        borderRadius: 4,
+        backgroundColor: 'white',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div {...attributes} {...listeners} style={{ cursor: 'grab', padding: '0 8px' }}>
+          <HolderOutlined />
+        </div>
+        <div>
+          <div style={{ fontWeight: 'bold' }}>{account.server_name} / {account.email}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>ID: {account.id.substring(0, 8)}...</div>
+        </div>
+      </div>
+      <Button size="small" danger onClick={onRemove}>移除</Button>
     </div>
   )
 }

@@ -153,7 +153,9 @@ func (h *SubscriptionHandler) Update(c *gin.Context) {
 
 	if req.AccountMappings != nil {
 		accountIDs := make([]string, 0)
-		for _, mapping := range *req.AccountMappings {
+		sortOrders := make(map[string]int)
+
+		for i, mapping := range *req.AccountMappings {
 			var accountID string
 			if mapping.AutoCreate {
 				newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
@@ -162,19 +164,19 @@ func (h *SubscriptionHandler) Update(c *gin.Context) {
 					Protocols: []string{"vless_tcp"},
 				})
 				if err != nil {
-					continue
+					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
+					return
 				}
 				accountID = newAccount.ID
 			} else {
 				accountID = mapping.AccountID
 			}
 			accountIDs = append(accountIDs, accountID)
+			sortOrders[accountID] = i
 		}
 
 		if len(accountIDs) > 0 {
-			for _, aid := range accountIDs {
-				h.subAccRepo.AddAccount(id, aid)
-			}
+			h.subAccRepo.ReplaceAccounts(id, accountIDs, sortOrders)
 		}
 	}
 
@@ -270,6 +272,44 @@ func (h *SubscriptionHandler) RemoveAccount(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "account removed"})
+}
+
+func (h *SubscriptionHandler) GetAccounts(c *gin.Context) {
+	id := c.Param("id")
+
+	accounts, err := h.subAccRepo.GetBySubscriptionOrdered(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, accounts)
+}
+
+func (h *SubscriptionHandler) UpdateAccountsOrder(c *gin.Context) {
+	id := c.Param("id")
+
+	var req struct {
+		Order []struct {
+			ID        string `json:"id"`
+			SortOrder int    `json:"sort_order"`
+		} `json:"order"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for _, item := range req.Order {
+		err := h.subAccRepo.UpdateSortOrder(id, item.ID, item.SortOrder)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "order updated"})
 }
 
 func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {

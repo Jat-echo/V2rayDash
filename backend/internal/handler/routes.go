@@ -76,7 +76,9 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.DELETE("/subscriptions/:id", subHandler.Delete)
 		api.GET("/subscriptions/:id/link", subHandler.GetLink)
 		api.POST("/subscriptions/:id/accounts", subHandler.AddAccount)
+		api.GET("/subscriptions/:id/accounts", subHandler.GetAccounts)
 		api.DELETE("/subscriptions/:id/accounts/:accountId", subHandler.RemoveAccount)
+		api.PUT("/subscriptions/:id/accounts/order", subHandler.UpdateAccountsOrder)
 
 		// Agent 通信
 		agentHandler := NewAgentHandler(logRepo, settingRepo)
@@ -93,10 +95,6 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 			c.Header("Content-Type", "text/plain")
 			c.File(installScriptPath)
 		})
-
-		// 模板管理
-		templateHandler := NewTemplateHandler(db)
-		templateHandler.RegisterRoutes(api)
 
 		// 安装管理
 		installHandler := NewInstallHandler(installScriptPath, NewServerHandler(db.DB).repo, NewAccountHandler(db.DB).Repo())

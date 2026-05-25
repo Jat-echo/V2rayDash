@@ -154,7 +154,7 @@ func (r *SubscriptionRepository) GetAccountIDs(subscriptionID string) ([]string,
 
 func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.SubscriptionWithAccounts, error) {
 	rows, err := r.db.Query(`
-		SELECT s.id, s.server_id, s.name, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
+		SELECT s.id, COALESCE(s.server_id::text, ''), s.name, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
 		       a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
 		       srv.name, srv.ip

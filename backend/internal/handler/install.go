@@ -16,6 +16,7 @@ type InstallHandler struct {
 	scriptPath  string
 	serverRepo  *repository.ServerRepository
 	accountRepo *repository.AccountRepository
+	accountSvc  *service.AccountService
 }
 
 type InstallRequest struct {
@@ -30,6 +31,10 @@ func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepositor
 		scriptPath:  scriptPath,
 		serverRepo:  serverRepo,
 		accountRepo: accountRepo,
+		accountSvc: service.NewAccountService(
+			accountRepo,
+			serverRepo,
+		),
 	}
 }
 
@@ -134,5 +139,18 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 			fmt.Fprintf(c.Writer, "\n[OK] Reality配置已保存到数据库\n")
 			flusher.Flush()
 		}
+	}
+
+	// 安装成功后，自动从远程导入账号
+	fmt.Fprintf(c.Writer, "\n[INFO] 正在从远程导入账号...\n")
+	flusher.Flush()
+
+	accounts, err := h.accountSvc.ImportFromRemote(serverID, auth)
+	if err != nil {
+		fmt.Fprintf(c.Writer, "\n[WARN] 导入账号失败: %v\n", err)
+		flusher.Flush()
+	} else {
+		fmt.Fprintf(c.Writer, "\n[OK] 已导入 %d 个账号\n", len(accounts))
+		flusher.Flush()
 	}
 }
