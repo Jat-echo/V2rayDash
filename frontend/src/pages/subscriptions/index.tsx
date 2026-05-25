@@ -400,7 +400,7 @@ export default function SubscriptionList() {
                   <div key={acc.id} style={{ marginBottom: 24 }}>
                     <h4>{acc.server_name} - {acc.email}</h4>
                     <QRCodeDisplay
-                      link={`${currentLink}&aid=${acc.id}&format=ss`}
+                      link={`${currentLink}?aid=${acc.id}`}
                       label={`${acc.server_name} / ${acc.email}`}
                     />
                   </div>

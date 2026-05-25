@@ -342,6 +342,21 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
+	// 如果指定了账号 ID，只返回该账号
+	if aid := c.Query("aid"); aid != "" {
+		for _, acc := range accounts {
+			if acc.ID == aid {
+				accounts = []*model.Account{acc}
+				break
+			}
+		}
+		// 如果没找到匹配的账号，返回错误
+		if len(accounts) == 0 || accounts[0].ID != aid {
+			c.String(http.StatusNotFound, "Account not found in this subscription")
+			return
+		}
+	}
+
 	serverIDs := make([]string, 0)
 	serverMap := make(map[string]*model.Server)
 	for _, acc := range accounts {
@@ -383,6 +398,9 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 	case "singbox":
 		content, _ = h.accountSvc.GenerateSingBoxSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "application/json; charset=utf-8")
+	case "ss":
+		c.String(http.StatusBadRequest, "ShadowSocks format is not supported for VLESS accounts")
+		return
 	default:
 		content = h.accountSvc.GenerateVLESSSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "text/plain; charset=utf-8")
