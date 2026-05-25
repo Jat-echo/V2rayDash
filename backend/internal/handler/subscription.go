@@ -228,12 +228,20 @@ func (h *SubscriptionHandler) GetLink(c *gin.Context) {
 func (h *SubscriptionHandler) AddAccount(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
-		ServerID  string `json:"server_id" binding:"required"`
+		ServerID  string `json:"server_id"`
 		AccountID string `json:"account_id"`
 		AutoCreate bool  `json:"auto_create"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.ServerID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "server_id is required"})
+		return
+	}
+	if !req.AutoCreate && req.AccountID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "account_id is required when auto_create is false"})
 		return
 	}
 

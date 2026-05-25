@@ -1606,7 +1606,7 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 			port = reality.Port
 		}
 
-		nodeName := fmt.Sprintf("%s-%s", server.Name, acc.Email[:8])
+		nodeName := fmt.Sprintf("%s-%s", server.Name, acc.Email[:min(len(acc.Email), 8)])
 
 		var proxy map[string]interface{}
 		if reality != nil && reality.Enabled {

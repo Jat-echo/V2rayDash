@@ -467,7 +467,9 @@ export default function SubscriptionList() {
           {servers.map(server => {
             const serverAccounts = accounts[server.id] || []
             const linkedAccountIds = managedAccounts.map(a => a.id)
-            const availableAccounts = serverAccounts.filter(acc => !linkedAccountIds.includes(acc.id))
+            // 同一服务器只能添加一个账号：如果该服务器已有账号在订阅中，就不再显示任何账号
+            const hasLinkedAccountFromServer = managedAccounts.some(a => a.server_id === server.id)
+            const availableAccounts = hasLinkedAccountFromServer ? [] : serverAccounts.filter(acc => !linkedAccountIds.includes(acc.id))
 
             return (
               <div key={server.id} style={{
@@ -478,7 +480,9 @@ export default function SubscriptionList() {
               }}>
                 <strong>{server.name}</strong> ({server.ip})
                 {availableAccounts.length === 0 ? (
-                  <div style={{ marginTop: 8, color: '#999' }}>无可用账号</div>
+                  <div style={{ marginTop: 8, color: '#999' }}>
+                    {hasLinkedAccountFromServer ? '已添加此服务器的账号' : '无可用账号'}
+                  </div>
                 ) : (
                   <div style={{ marginTop: 8 }}>
                     {availableAccounts.map(acc => (
