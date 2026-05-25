@@ -32,10 +32,14 @@ func NewAccountService(accountRepo *repository.AccountRepository, serverRepo *re
 }
 
 // GetAccountLink 生成单个账号的订阅链接
-func (s *AccountService) GetAccountLink(account *model.Account, serverIP string, subType string, reality *RealityConfig) string {
+func (s *AccountService) GetAccountLink(account *model.Account, serverIP string, subType string, reality *RealityConfig, remark string) string {
 	port := 443
 	if reality != nil && reality.Enabled && reality.Port > 0 {
 		port = reality.Port
+	}
+
+	if remark == "" {
+		remark = account.Email
 	}
 
 	var link string
@@ -44,11 +48,11 @@ func (s *AccountService) GetAccountLink(account *model.Account, serverIP string,
 		if reality != nil && reality.Enabled {
 			// Reality 格式
 			link = fmt.Sprintf("vless://%s@%s:%d?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=6ba85179e30d4fc2&flow=xtls-rprx-vision#%s",
-				account.UUID, serverIP, port, reality.ServerName, reality.PublicKey, account.Email)
+				account.UUID, serverIP, port, reality.ServerName, reality.PublicKey, remark)
 		} else {
 			// 普通 TLS 格式
 			link = fmt.Sprintf("vless://%s@%s:%d?encryption=none&flow=xtls-rprx-vision&security=tls&sni=%s#%s",
-				account.UUID, serverIP, port, serverIP, account.Email)
+				account.UUID, serverIP, port, serverIP, remark)
 		}
 	case "ss":
 		// ShadowRocket: 生成 SS URI (兼容格式)
@@ -59,7 +63,7 @@ func (s *AccountService) GetAccountLink(account *model.Account, serverIP string,
 			password := fmt.Sprintf("%s@%s:%d", account.UUID, serverIP, port)
 			method := "chacha20-ietf-poly1305"
 			encoded := base64.StdEncoding.EncodeToString([]byte(method + ":" + password))
-			link = fmt.Sprintf("ss://%s#%s", encoded, account.Email)
+			link = fmt.Sprintf("ss://%s#%s", encoded, remark)
 		}
 	case "clash_meta":
 		// Placeholder link for Clash Meta - not used for subscription generation
@@ -78,7 +82,7 @@ func (s *AccountService) GenerateVLESSSubscription(accounts []*model.Account, se
 			continue
 		}
 		// Generate VLESS URIs
-		link := s.GetAccountLink(acc, serverIP, "vless", reality)
+		link := s.GetAccountLink(acc, serverIP, "vless", reality, "")
 		lines = append(lines, link)
 	}
 	return strings.Join(lines, "\n")
@@ -1580,7 +1584,8 @@ func (s *AccountService) GenerateVLESSSubscriptionMulti(accounts []*model.Accoun
 			continue
 		}
 		reality := realityConfigs[acc.ServerID]
-		link := s.GetAccountLink(acc, server.IP, "vless", reality)
+		remark := fmt.Sprintf("%s-%s", server.Name, acc.Email[:min(len(acc.Email), 8)])
+		link := s.GetAccountLink(acc, server.IP, "vless", reality, remark)
 		lines = append(lines, link)
 	}
 	return strings.Join(lines, "\n")
