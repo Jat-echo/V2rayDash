@@ -85,6 +85,40 @@ export interface OperationLog {
   created_at: string
 }
 
+export interface MetricPoint {
+  time: string
+  value: number
+}
+
+export interface BandwidthPoint {
+  time: string
+  value: number
+}
+
+export interface NodeStatusMetrics {
+  cpu: MetricPoint[]
+  memory: MetricPoint[]
+  disk: MetricPoint[]
+  bandwidth_in: BandwidthPoint[]
+  bandwidth_out: BandwidthPoint[]
+}
+
+export interface NodeStatusCurrent {
+  cpu_percent: number
+  memory_percent: number
+  disk_percent: number
+  bandwidth_in: number
+  bandwidth_out: number
+  v2ray_status: string
+  reported_at: string
+}
+
+export interface NodeStatusResponse {
+  server_id: string
+  metrics: NodeStatusMetrics
+  current: NodeStatusCurrent
+}
+
 export interface NodeStatus {
   id: string
   server_id: string
@@ -127,5 +161,9 @@ export const subscriptionAPI = {
 export const logAPI = {
   list: (params?: { start_time?: string; end_time?: string; target_type?: string }) =>
     api.get<OperationLog[]>('/logs/operation', { params }).then(r => r.data),
-  getNodeStatuses: () => api.get<NodeStatus[]>('/logs/node-status').then(r => r.data),
+  getNodeStatuses: (timeRange: string = '1h', serverId?: string): Promise<NodeStatusResponse[]> => {
+  const params = new URLSearchParams({ time_range: timeRange })
+  if (serverId) params.append('server_id', serverId)
+  return api.get(`/logs/node-status?${params.toString()}`)
+},
 }

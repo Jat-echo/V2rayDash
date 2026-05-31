@@ -1,31 +1,34 @@
 import { useState, useEffect } from 'react'
-import { Card, Row, Col, Statistic, Tag, Progress, message } from 'antd'
-import { serverAPI, logAPI, Server, NodeStatus } from '../../services/api'
+import { Card, Row, Col, Statistic, Tag, message, Segmented } from 'antd'
+import { Line } from '@ant-design/plots'
+import { serverAPI, logAPI, Server, NodeStatusResponse } from '../../services/api'
+
+const TIME_RANGES = [
+  { label: '1小时', value: '1h' },
+  { label: '4小时', value: '4h' },
+  { label: '12小时', value: '12h' },
+  { label: '24小时', value: '24h' },
+]
 
 export default function Monitor() {
   const [servers, setServers] = useState<Server[]>([])
-  const [statuses, setStatuses] = useState<Map<string, NodeStatus>>(new Map())
+  const [statuses, setStatuses] = useState<Map<string, NodeStatusResponse>>(new Map())
   const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    loadData()
-    const interval = setInterval(loadData, 30000) // 30秒刷新
-    return () => clearInterval(interval)
-  }, [])
+  const [timeRange, setTimeRange] = useState('1h')
 
   const loadData = async () => {
     setLoading(true)
     try {
       const [serverData, statusData] = await Promise.all([
         serverAPI.list(),
-        logAPI.getNodeStatuses()
+        logAPI.getNodeStatuses(timeRange)
       ])
 
       setServers(serverData || [])
 
-      const statusMap = new Map<string, NodeStatus>()
+      const statusMap = new Map<string, NodeStatusResponse>()
       if (statusData && statusData.length > 0) {
-        statusData.forEach(s => statusMap.set(s.server_id, s))
+        statusData.forEach((s: NodeStatusResponse) => statusMap.set(s.server_id, s))
       }
       setStatuses(statusMap)
     } catch (e) {
@@ -34,6 +37,10 @@ export default function Monitor() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    loadData()
+  }, [timeRange])
 
   const getStatusColor = (status: string) => {
     if (status === 'running') return 'green'
@@ -55,78 +62,98 @@ export default function Monitor() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
+  const renderLineChart = (data: any[], color: string) => {
+    if (!data || data.length === 0) {
+      return <div style={{ height: 200, textAlign: 'center', color: '#999', lineHeight: '200px' }}>暂无数据</div>
+    }
+    const config = {
+      data,
+      xField: 'time',
+      yField: 'value',
+      smooth: true,
+      color,
+      lineStyle: { lineWidth: 2 },
+      xAxis: { type: 'time' },
+      yAxis: { min: 0 },
+    }
+    return <Line {...config} style={{ height: 200 }} />
+  }
+
   return (
     <div className="animate-in">
-      {/* Page Header */}
-      <div className="page-header">
-        <h1>监控中心</h1>
-        <p>查看服务器状态和性能指标</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>监控中心</h1>
+          <p>查看服务器状态和性能指标</p>
+        </div>
+        <Segmented
+          options={TIME_RANGES}
+          value={timeRange}
+          onChange={setTimeRange}
+        />
       </div>
 
-      {/* Server Cards with Status */}
+      {/* Server Cards */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         {servers.map(server => {
           const status = statuses.get(server.id)
           return (
-            <Col span={8} key={server.id} style={{ marginBottom: 16 }}>
-              <Card
-                className="morandi-card"
-                title={
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>{server.name}</span>
-                    {status ? getV2rayTag(status.v2ray_status) : <Tag color="default">离线</Tag>}
-                  </span>
-                }
-                loading={loading}
-              >
-                <Statistic title="IP 地址" value={server.ip} />
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>
-                    SSH: {server.ssh_port}
-                  </div>
-                  {status ? (
-                    <>
-                      <div style={{ marginTop: 16 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span>CPU</span>
-                          <span style={{ color: 'var(--morandi-terracotta)' }}>{status.cpu_percent.toFixed(1)}%</span>
+            <Col span={24} key={server.id} style={{ marginBottom: 16 }}>
+              <Card className="morandi-card" loading={loading}>
+                <Row gutter={16}>
+                  <Col span={4}>
+                    <Statistic title={server.name} value={server.ip} />
+                    <Tag color={status ? getStatusColor(status.current?.v2ray_status) : 'default'}>
+                      {status ? (status.current?.v2ray_status === 'running' ? '运行中' : '已停止') : '离线'}
+                    </Tag>
+                  </Col>
+                  <Col span={20}>
+                    {status ? (
+                      <>
+                        {/* CPU Chart */}
+                        <div style={{ marginBottom: 16 }}>
+                          <h4>CPU 使用率 (%)</h4>
+                          {renderLineChart(
+                            status.metrics.cpu.map((p: MetricPoint) => ({ time: p.time, value: p.value })),
+                            '#ee6666'
+                          )}
                         </div>
-                        <Progress percent={status.cpu_percent} showInfo={false} strokeColor="var(--morandi-dusty-rose)" size="small" />
-                      </div>
-                      <div style={{ marginTop: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span>内存</span>
-                          <span style={{ color: 'var(--morandi-sage)' }}>{status.memory_percent.toFixed(1)}%</span>
+                        {/* Memory Chart */}
+                        <div style={{ marginBottom: 16 }}>
+                          <h4>内存使用率 (%)</h4>
+                          {renderLineChart(
+                            status.metrics.memory.map((p: MetricPoint) => ({ time: p.time, value: p.value })),
+                            '#3cb371'
+                          )}
                         </div>
-                        <Progress percent={status.memory_percent} showInfo={false} strokeColor="var(--morandi-sage)" size="small" />
-                      </div>
-                      <div style={{ marginTop: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span>磁盘</span>
-                          <span style={{ color: 'var(--morandi-sky)' }}>{status.disk_percent.toFixed(1)}%</span>
+                        {/* Bandwidth Chart */}
+                        <div style={{ marginBottom: 16 }}>
+                          <h4>带宽流量 (入站/出站)</h4>
+                          {renderLineChart([
+                            ...status.metrics.bandwidth_in.map((p: BandwidthPoint) => ({ time: p.time, value: p.value, type: '入站' })),
+                            ...status.metrics.bandwidth_out.map((p: BandwidthPoint) => ({ time: p.time, value: p.value, type: '出站' })),
+                          ], '#7265e6')}
                         </div>
-                        <Progress percent={status.disk_percent} showInfo={false} strokeColor="var(--morandi-sky)" size="small" />
-                      </div>
-                      <div style={{ marginTop: 12, display: 'flex', gap: 16 }}>
+                        {/* Disk */}
                         <div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>入站</div>
-                          <div style={{ color: 'var(--morandi-lavender)' }}>{formatBytes(status.bandwidth_in)}</div>
+                          <h4>磁盘使用率</h4>
+                          <Statistic
+                            value={status.current?.disk_percent || 0}
+                            suffix="%"
+                            valueStyle={{ color: '#1890ff' }}
+                          />
                         </div>
-                        <div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>出站</div>
-                          <div style={{ color: 'var(--morandi-lavender)' }}>{formatBytes(status.bandwidth_out)}</div>
+                        <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                          上报时间: {new Date(status.current?.reported_at).toLocaleString()}
                         </div>
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
+                        等待 Agent 上报状态...
                       </div>
-                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)' }}>
-                        上报时间: {new Date(status.reported_at).toLocaleString()}
-                      </div>
-                    </>
-                  ) : (
-                    <div style={{ marginTop: 16, textAlign: 'center', color: 'var(--text-muted)' }}>
-                      等待 Agent 上报状态...
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </Col>
+                </Row>
               </Card>
             </Col>
           )
@@ -135,9 +162,8 @@ export default function Monitor() {
 
       {servers.length === 0 && (
         <Card className="morandi-card">
-          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🖥️</div>
-            <h3 style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>暂无服务器</h3>
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
+            <h3>暂无服务器</h3>
             <p>请先在服务器管理中添加服务器</p>
           </div>
         </Card>
