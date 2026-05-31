@@ -17,11 +17,45 @@ type NodeStatus struct {
 }
 
 type HeartbeatRequest struct {
-	ServerID    string  `json:"server_id" binding:"required"`
-	CPUPercent  float64 `json:"cpu_percent"`
-	MemPercent  float64 `json:"mem_percent"`
-	DiskPercent float64 `json:"disk_percent"`
-	BandwidthIn int64   `json:"bandwidth_in"`
-	BandwidthOut int64  `json:"bandwidth_out"`
-	V2rayStatus string  `json:"v2ray_status"`
+	ServerID       string  `json:"server_id" binding:"required"`
+	CPUPercent     float64 `json:"cpu_percent"`
+	MemoryPercent  float64 `json:"memory_percent"`
+	DiskPercent    float64 `json:"disk_percent"`
+	BandwidthIn    int64   `json:"bandwidth_in"`
+	BandwidthOut   int64   `json:"bandwidth_out"`
+	V2rayStatus    string  `json:"v2ray_status"`
+}
+
+type MetricPoint struct {
+	Time  time.Time `json:"time"`
+	Value float64   `json:"value"`
+}
+
+type BandwidthPoint struct {
+	Time  time.Time `json:"time"`
+	Value int64     `json:"value"`
+}
+
+type NodeStatusMetrics struct {
+	CPU          []MetricPoint    `json:"cpu"`
+	Memory       []MetricPoint    `json:"memory"`
+	Disk         []MetricPoint    `json:"disk"`
+	BandwidthIn  []BandwidthPoint `json:"bandwidth_in"`
+	BandwidthOut []BandwidthPoint `json:"bandwidth_out"`
+}
+
+type NodeStatusCurrent struct {
+	CPUPercent    float64   `json:"cpu_percent"`
+	MemoryPercent float64   `json:"memory_percent"`
+	DiskPercent   float64   `json:"disk_percent"`
+	BandwidthIn   int64     `json:"bandwidth_in"`
+	BandwidthOut  int64     `json:"bandwidth_out"`
+	V2rayStatus   string    `json:"v2ray_status"`
+	ReportedAt    time.Time `json:"reported_at"`
+}
+
+type NodeStatusResponse struct {
+	ServerID string            `json:"server_id"`
+	Metrics  NodeStatusMetrics `json:"metrics"`
+	Current  *NodeStatusCurrent `json:"current"`
 }

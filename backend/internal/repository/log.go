@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"v2ray-dash/backend/internal/model"
@@ -102,5 +103,49 @@ func (r *LogRepository) ListNodeStatuses() ([]*model.NodeStatus, error) {
 	if statuses == nil {
 		statuses = []*model.NodeStatus{}
 	}
+	return statuses, nil
+}
+
+func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange string) ([]*model.NodeStatus, error) {
+	var interval string
+	switch timeRange {
+	case "1h":
+		interval = "1 hour"
+	case "4h":
+		interval = "4 hours"
+	case "12h":
+		interval = "12 hours"
+	case "24h":
+		interval = "24 hours"
+	default:
+		interval = "1 hour"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, server_id, cpu_percent, memory_percent, disk_percent,
+		       bandwidth_in, bandwidth_out, v2ray_status, reported_at
+		FROM node_status
+		WHERE reported_at > NOW() - INTERVAL '%s'
+		AND ($1 = '' OR server_id = $1)
+		ORDER BY reported_at ASC
+	`, interval)
+
+	rows, err := r.db.Query(query, serverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var statuses []*model.NodeStatus
+	for rows.Next() {
+		var s model.NodeStatus
+		err := rows.Scan(&s.ID, &s.ServerID, &s.CPUPercent, &s.MemoryPercent,
+			&s.DiskPercent, &s.BandwidthIn, &s.BandwidthOut, &s.V2rayStatus, &s.ReportedAt)
+		if err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, &s)
+	}
+
 	return statuses, nil
 }
