@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Card, Row, Col, Statistic, Tag, message, Segmented } from 'antd'
 import { Line } from '@ant-design/plots'
-import { serverAPI, logAPI, Server, NodeStatusResponse } from '../../services/api'
+import { serverAPI, logAPI, Server, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 
 const TIME_RANGES = [
   { label: '1小时', value: '1h' },
@@ -62,7 +62,7 @@ export default function Monitor() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const renderLineChart = (data: any[], color: string) => {
+  const renderLineChart = (data: { time: string; value: number; type?: string }[], color: string, secondColor?: string) => {
     if (!data || data.length === 0) {
       return <div style={{ height: 200, textAlign: 'center', color: '#999', lineHeight: '200px' }}>暂无数据</div>
     }
@@ -71,8 +71,9 @@ export default function Monitor() {
       xField: 'time',
       yField: 'value',
       smooth: true,
-      color,
+      color: secondColor || color,
       lineStyle: { lineWidth: 2 },
+      seriesField: 'type',
       xAxis: { type: 'time' },
       yAxis: { min: 0 },
     }
@@ -132,7 +133,7 @@ export default function Monitor() {
                           {renderLineChart([
                             ...status.metrics.bandwidth_in.map((p: BandwidthPoint) => ({ time: p.time, value: p.value, type: '入站' })),
                             ...status.metrics.bandwidth_out.map((p: BandwidthPoint) => ({ time: p.time, value: p.value, type: '出站' })),
-                          ], '#7265e6')}
+                          ], '#7265e6', '#3cb371')}
                         </div>
                         {/* Disk */}
                         <div>
