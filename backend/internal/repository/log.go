@@ -2,7 +2,6 @@ package repository
 
 import (
 	"database/sql"
-	"fmt"
 	"time"
 
 	"v2ray-dash/backend/internal/model"
@@ -121,16 +120,16 @@ func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange st
 		interval = "1 hour"
 	}
 
-	query := fmt.Sprintf(`
+	query := `
 		SELECT id, server_id, cpu_percent, memory_percent, disk_percent,
 		       bandwidth_in, bandwidth_out, v2ray_status, reported_at
 		FROM node_status
-		WHERE reported_at > NOW() - INTERVAL '%s'
+		WHERE reported_at > NOW() - $2::interval
 		AND ($1 = '' OR server_id = $1)
 		ORDER BY reported_at ASC
-	`, interval)
+	`
 
-	rows, err := r.db.Query(query, serverID)
+	rows, err := r.db.Query(query, serverID, interval)
 	if err != nil {
 		return nil, err
 	}
