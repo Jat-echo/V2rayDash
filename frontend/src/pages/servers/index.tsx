@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Popconfirm, Tag, Card, Alert, Segmented } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented } from 'antd'
 import { serverAPI, accountAPI, logAPI, Server, Account, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 
@@ -519,7 +519,7 @@ export default function ServerList() {
             <Input />
           </Form.Item>
           <Form.Item name="ssh_port" label="SSH端口" initialValue={22}>
-            <Input type="number" />
+            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="ssh_user" label="SSH用户" initialValue="root">
             <Input />
@@ -701,7 +701,7 @@ export default function ServerList() {
             <Input />
           </Form.Item>
           <Form.Item name="ssh_port" label="SSH端口" rules={[{ required: true }]}>
-            <Input type="number" />
+            <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="ssh_user" label="SSH用户" rules={[{ required: true }]}>
             <Input />
