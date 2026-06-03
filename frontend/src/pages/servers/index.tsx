@@ -214,9 +214,10 @@ export default function ServerList() {
     setInstallModalVisible(true)
     setInstalling(true)
 
+    const token = localStorage.getItem('admin_token') || ''
     fetch(`/api/servers/${selectedServer?.id}/install`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
         core: installConfig.core,
         uuid: installConfig.uuid,
