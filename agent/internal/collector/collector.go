@@ -206,22 +206,27 @@ func (c *Collector) getBandwidth() (int64, int64, error) {
 }
 
 func (c *Collector) checkV2ray() string {
-	if runtime.GOOS == "linux" {
-		// 检查多种可能的服务名称
-		serviceNames := []string{"xray", "v2ray", "sing-box"}
-		for _, name := range serviceNames {
-			cmd := exec.Command("systemctl", "is-active", name)
-			output, _ := cmd.Output()
-			if strings.TrimSpace(string(output)) == "active" {
-				return "running"
-			}
+	if runtime.GOOS != "linux" {
+		return "stopped"
+	}
+	// Read /proc directly — no exec, works reliably in any daemon environment.
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return "stopped"
+	}
+	keywords := []string{"/xray", "xray run", "/v2ray", "/sing-box"}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
 		}
-		// 备用：检查进程是否存在
-		processNames := []string{"xray", "v2ray", "sing-box"}
-		for _, name := range processNames {
-			cmd := exec.Command("pgrep", "-f", name)
-			output, _ := cmd.Output()
-			if len(output) > 0 {
+		data, err := os.ReadFile("/proc/" + e.Name() + "/cmdline")
+		if err != nil {
+			continue
+		}
+		// cmdline uses NUL bytes as separators
+		cmd := strings.ReplaceAll(string(data), "\x00", " ")
+		for _, kw := range keywords {
+			if strings.Contains(cmd, kw) {
 				return "running"
 			}
 		}
