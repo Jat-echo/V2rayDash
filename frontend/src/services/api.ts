@@ -174,6 +174,13 @@ export const serverAPI = {
   restartXray: (id: string) => api.post(`/servers/${id}/restart-xray`).then(r => r.data),
 }
 
+export interface AccountTrafficSeries {
+  account_id: string
+  email: string
+  server_name: string
+  points: BandwidthPoint[]
+}
+
 export const subscriptionAPI = {
   list: (serverId?: string) => {
     const params = serverId ? { server_id: serverId } : {}
@@ -195,6 +202,8 @@ export const subscriptionAPI = {
     api.get<AccountWithServer[]>(`/subscriptions/${id}/accounts`).then(r => r.data),
   getTrafficLogs: (id: string, range: string = '1d') =>
     api.get<BandwidthPoint[]>(`/subscriptions/${id}/traffic`, { params: { range } }).then(r => r.data),
+  getAccountTrafficLogs: (id: string, range: string = '1d') =>
+    api.get<AccountTrafficSeries[]>(`/subscriptions/${id}/accounts/traffic`, { params: { range } }).then(r => r.data),
 }
 
 export const logAPI = {

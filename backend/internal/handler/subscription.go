@@ -344,6 +344,17 @@ func (h *SubscriptionHandler) UpdateAccountsOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "order updated"})
 }
 
+func (h *SubscriptionHandler) GetAccountTraffic(c *gin.Context) {
+	id := c.Param("id")
+	timeRange := c.DefaultQuery("range", "1d")
+	series, err := h.repo.GetAccountTrafficLogs(id, timeRange)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, series)
+}
+
 func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 	uuid := c.Param("uuid")
 	sub, err := h.repo.GetByUUID(uuid)

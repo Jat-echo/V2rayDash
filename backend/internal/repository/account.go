@@ -198,3 +198,20 @@ func (r *AccountRepository) AddTrafficUsed(id string, bytes int64) error {
 	)
 	return err
 }
+
+// AddTrafficAndLog increments traffic_used and records a cumulative snapshot for charting
+func (r *AccountRepository) AddTrafficAndLog(id string, delta int64) error {
+	var newTotal int64
+	err := r.db.QueryRow(
+		`UPDATE accounts SET traffic_used = traffic_used + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING traffic_used`,
+		delta, id,
+	).Scan(&newTotal)
+	if err != nil {
+		return err
+	}
+	_, _ = r.db.Exec(
+		`INSERT INTO account_traffic_logs (account_id, traffic_bytes) VALUES ($1, $2)`,
+		id, newTotal,
+	)
+	return nil
+}

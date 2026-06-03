@@ -100,6 +100,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 
 		// 订阅流量查询
 		api.GET("/subscriptions/:id/traffic", agentHandlerPub.GetTrafficLogs)
+		api.GET("/subscriptions/:id/accounts/traffic", subHandler.GetAccountTraffic)
 
 		// 认证管理（需要 token）
 		api.PUT("/auth/password", authHandler.ChangePassword)

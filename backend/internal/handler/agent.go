@@ -71,7 +71,7 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 			if err != nil {
 				continue
 			}
-			h.accountRepo.AddTrafficUsed(acc.ID, delta)
+			h.accountRepo.AddTrafficAndLog(acc.ID, delta)
 			// 找到该账号所属的所有订阅，标记需要重新计算
 			subIDs, _ := h.subRepo.GetByAccountID(acc.ID)
 			for _, sid := range subIDs {

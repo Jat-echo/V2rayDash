@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card, Tag, Checkbox, Divider, Progress, Spin } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card, Tag, Checkbox, Divider, Progress } from 'antd'
 import { CopyOutlined, QrcodeOutlined, HolderOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import QRCode from 'qrcode'
-import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, BandwidthPoint } from '../../services/api'
+import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, AccountTrafficSeries } from '../../services/api'
 import { formatBytes, withFlag } from '../../utils/format'
 
 interface SubscriptionWithAccounts extends Subscription {
@@ -389,7 +389,7 @@ export default function SubscriptionList() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
-          expandable={{ expandedRowRender: (record) => <TrafficDetail subId={record.id} /> }}
+          expandable={{ expandedRowRender: (record) => <TrafficDetail subId={record.id} accounts={record.accounts} /> }}
         />
       </Card>
 
@@ -678,82 +678,265 @@ const TRAFFIC_RANGES = [
   { label: '30天', value: '30d' },
 ]
 
-function TrafficDetail({ subId }: { subId: string }) {
+const CHART_W = 800
+const CHART_H = 180
+const PAD_L = 70
+const PAD_R = 16
+const PAD_T = 12
+const PAD_B = 28
+
+// Morandi-ish multi-series colors
+const SERIES_COLORS = ['#5B8DB8', '#C87D55', '#6BA87C', '#9B6B9B', '#B8936A']
+
+function formatTimeLabel(isoTime: string, range: string): string {
+  const d = new Date(isoTime)
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  if (range === '1h' || range === '6h') {
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } else if (range === '1d') {
+    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } else {
+    return `${d.getMonth() + 1}/${d.getDate()}`
+  }
+}
+
+// Smooth bezier path through points
+function smoothPath(pts: { x: number; y: number }[]): string {
+  if (pts.length < 2) return ''
+  let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const xc = ((pts[i].x + pts[i + 1].x) / 2).toFixed(1)
+    const yc = ((pts[i].y + pts[i + 1].y) / 2).toFixed(1)
+    d += ` Q ${pts[i].x.toFixed(1)} ${pts[i].y.toFixed(1)} ${xc} ${yc}`
+  }
+  d += ` L ${pts[pts.length - 1].x.toFixed(1)} ${pts[pts.length - 1].y.toFixed(1)}`
+  return d
+}
+
+function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountWithServer[] }) {
   const [range, setRange] = useState('1d')
-  const [points, setPoints] = useState<BandwidthPoint[]>([])
-  const [loading, setLoading] = useState(false)
+  const [series, setSeries] = useState<AccountTrafficSeries[]>([])
+  const [fetching, setFetching] = useState(false)
+  const [hoverX, setHoverX] = useState<number | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
 
   const load = useCallback(async () => {
-    setLoading(true)
+    setFetching(true)
     try {
-      const data = await subscriptionAPI.getTrafficLogs(subId, range)
-      setPoints(data || [])
+      const data = await subscriptionAPI.getAccountTrafficLogs(subId, range)
+      setSeries(data || [])
     } catch {}
-    finally { setLoading(false) }
+    finally { setFetching(false) }
   }, [subId, range])
 
   useEffect(() => { load() }, [load])
 
-  // Compute delta points (traffic consumed between consecutive snapshots)
-  const deltaPoints = points.map((p, i) => ({
-    time: new Date(p.time).toLocaleString(),
-    value: i === 0 ? 0 : Math.max(0, p.value - points[i - 1].value),
+  const innerW = CHART_W - PAD_L - PAD_R
+  const innerH = CHART_H - PAD_T - PAD_B
+
+  // Compute delta series (traffic consumed per interval)
+  const deltaSeries = series.map(s => ({
+    ...s,
+    deltas: s.points.map((p, i) => ({
+      time: typeof p.time === 'string' ? p.time : new Date(p.time).toISOString(),
+      value: i === 0 ? 0 : Math.max(0, p.value - s.points[i - 1].value),
+    })),
   }))
 
-  const totalDelta = deltaPoints.reduce((sum, p) => sum + p.value, 0)
+  const totalDelta = deltaSeries.reduce((sum, s) =>
+    sum + s.deltas.reduce((a, p) => a + p.value, 0), 0)
+
+  // Unified time axis: union of all timestamps
+  const allTimes = Array.from(new Set(
+    deltaSeries.flatMap(s => s.deltas.map(p => p.time))
+  )).sort()
+
+  const nPts = allTimes.length
+  const allValues = deltaSeries.flatMap(s => s.deltas.map(p => p.value))
+  const maxVal = Math.max(...allValues, 1)
+  const magnitude = Math.pow(10, Math.floor(Math.log10(maxVal)))
+  const niceMax = Math.ceil(maxVal / magnitude) * magnitude
+
+  // Build SVG points per series (aligned to allTimes)
+  const seriesPts = deltaSeries.map(s => {
+    const timeMap = new Map(s.deltas.map(p => [p.time, p.value]))
+    return allTimes.map((t, i) => {
+      const val = timeMap.get(t) ?? 0
+      const x = PAD_L + (nPts <= 1 ? innerW / 2 : (i / (nPts - 1)) * innerW)
+      const y = PAD_T + innerH - (val / niceMax) * innerH
+      return { x, y, time: t, value: val }
+    })
+  })
+
+  // X-axis label indices
+  const xCount = Math.min(nPts, 6)
+  const xIndices = xCount <= 1 ? [0] : Array.from({ length: xCount }, (_, i) =>
+    Math.round(i * (nPts - 1) / (xCount - 1))
+  )
+
+  // Hover: find nearest X index
+  const hoverIdx = hoverX === null ? null : Math.max(0, Math.min(nPts - 1,
+    Math.round(((hoverX - PAD_L) / innerW) * (nPts - 1))
+  ))
+  const hoverXPos = hoverIdx !== null && nPts > 1
+    ? PAD_L + (hoverIdx / (nPts - 1)) * innerW
+    : null
+
+  const yLevels = [0, 0.25, 0.5, 0.75, 1.0]
+  const hasData = nPts > 0
 
   return (
-    <div style={{ padding: '12px 24px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+    <div style={{ padding: '12px 24px', opacity: fetching ? 0.65 : 1, transition: 'opacity 0.2s' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
         <span style={{ fontWeight: 600, fontSize: 14 }}>流量使用趋势</span>
         <span style={{ color: '#999', fontSize: 13 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           {TRAFFIC_RANGES.map(r => (
-            <Button
-              key={r.value}
-              size="small"
+            <Button key={r.value} size="small"
               type={range === r.value ? 'primary' : 'default'}
               onClick={() => setRange(r.value)}
             >{r.label}</Button>
           ))}
         </div>
       </div>
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: 20 }}><Spin /></div>
-      ) : deltaPoints.length === 0 ? (
-        <div style={{ color: '#999', padding: '20px 0', textAlign: 'center' }}>
-          暂无流量数据（xray 流量统计需在 Agent 上配置并上报后生效）
+
+      {/* Legend */}
+      {deltaSeries.length > 0 && (
+        <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+          {deltaSeries.map((s, i) => (
+            <div key={s.account_id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
+              <span style={{ width: 20, height: 2, background: SERIES_COLORS[i % SERIES_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
+              <span style={{ color: '#666' }}>{withFlag(s.server_name)} / {s.email}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Chart */}
+      {!hasData ? (
+        <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
+          暂无流量数据（切换时间范围或等待下一次心跳上报后生效）
         </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <svg width="100%" height="120" viewBox={`0 0 ${Math.max(deltaPoints.length * 40, 400)} 120`} preserveAspectRatio="none">
-            {(() => {
-              const w = Math.max(deltaPoints.length * 40, 400)
-              const maxVal = Math.max(...deltaPoints.map(p => p.value), 1)
-              const pts = deltaPoints.map((p, i) => {
-                const x = (i / Math.max(deltaPoints.length - 1, 1)) * (w - 20) + 10
-                const y = 100 - (p.value / maxVal) * 90
-                return { x, y, ...p }
-              })
-              const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-              const fillD = `${pathD} L ${pts[pts.length - 1].x} 110 L ${pts[0].x} 110 Z`
-              return (
-                <>
-                  <defs>
-                    <linearGradient id={`tg-${subId}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#1677ff" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#1677ff" stopOpacity="0.02" />
-                    </linearGradient>
-                  </defs>
-                  <path d={fillD} fill={`url(#tg-${subId})`} />
-                  <path d={pathD} fill="none" stroke="#1677ff" strokeWidth="2" strokeLinecap="round" />
-                  {pts.map((p, i) => (
-                    <title key={i}>{p.time}: {formatBytes(p.value)}</title>
-                  ))}
-                </>
-              )
-            })()}
-          </svg>
+        <svg ref={svgRef} width="100%" height={CHART_H}
+          viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ display: 'block', cursor: 'crosshair' }}
+          onMouseMove={e => {
+            const rect = svgRef.current!.getBoundingClientRect()
+            const x = (e.clientX - rect.left) * (CHART_W / rect.width)
+            setHoverX(x)
+          }}
+          onMouseLeave={() => setHoverX(null)}
+        >
+          <defs>
+            {deltaSeries.map((s, i) => (
+              <linearGradient key={s.account_id} id={`fill-${subId}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={SERIES_COLORS[i % SERIES_COLORS.length]} stopOpacity="0.18" />
+                <stop offset="100%" stopColor={SERIES_COLORS[i % SERIES_COLORS.length]} stopOpacity="0.01" />
+              </linearGradient>
+            ))}
+          </defs>
+
+          {/* Gridlines + Y labels */}
+          {yLevels.map(level => {
+            const y = PAD_T + innerH - level * innerH
+            return (
+              <g key={level}>
+                <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y}
+                  stroke={level === 0 ? '#ccc' : '#ebebeb'} strokeWidth="1" />
+                <text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize="11" fill="#aaa">
+                  {formatBytes(level * niceMax)}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* X labels */}
+          {xIndices.map(idx => {
+            if (!allTimes[idx]) return null
+            const x = PAD_L + (nPts <= 1 ? innerW / 2 : (idx / (nPts - 1)) * innerW)
+            return (
+              <text key={idx} x={x} y={PAD_T + innerH + 18} textAnchor="middle" fontSize="11" fill="#aaa">
+                {formatTimeLabel(allTimes[idx], range)}
+              </text>
+            )
+          })}
+
+          {/* Series: fill + smooth line */}
+          {seriesPts.map((pts, i) => {
+            if (pts.length < 2) return null
+            const color = SERIES_COLORS[i % SERIES_COLORS.length]
+            const linePath = smoothPath(pts)
+            const baseY = PAD_T + innerH
+            const fillPath = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)} ${baseY} L ${pts[0].x.toFixed(1)} ${baseY} Z`
+            return (
+              <g key={series[i].account_id}>
+                <path d={fillPath} fill={`url(#fill-${subId}-${i})`} />
+                <path d={linePath} fill="none" stroke={color} strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" />
+              </g>
+            )
+          })}
+
+          {/* Hover: vertical line + dots + tooltip */}
+          {hoverIdx !== null && hoverXPos !== null && (
+            <g>
+              <line x1={hoverXPos} y1={PAD_T} x2={hoverXPos} y2={PAD_T + innerH}
+                stroke="#ccc" strokeWidth="1" strokeDasharray="4,3" />
+              {seriesPts.map((pts, i) => {
+                const p = pts[hoverIdx]
+                if (!p) return null
+                const color = SERIES_COLORS[i % SERIES_COLORS.length]
+                return <circle key={i} cx={p.x} cy={p.y} r="4" fill={color} stroke="white" strokeWidth="1.5" />
+              })}
+              {/* Tooltip box */}
+              {(() => {
+                const tipW = 148, tipH = 16 + seriesPts.length * 18 + 6
+                const tipX = hoverXPos + 10 > CHART_W - tipW - PAD_R ? hoverXPos - tipW - 10 : hoverXPos + 10
+                const tipY = PAD_T + 4
+                return (
+                  <g>
+                    <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="5"
+                      fill="white" stroke="#e0e0e0" strokeWidth="1"
+                      style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.08))' }} />
+                    <text x={tipX + 10} y={tipY + 14} fontSize="11" fill="#888">
+                      {formatTimeLabel(allTimes[hoverIdx] ?? '', range)}
+                    </text>
+                    {seriesPts.map((pts, i) => {
+                      const p = pts[hoverIdx]
+                      if (!p) return null
+                      const color = SERIES_COLORS[i % SERIES_COLORS.length]
+                      return (
+                        <g key={i}>
+                          <rect x={tipX + 10} y={tipY + 20 + i * 18} width={8} height={2} rx="1" fill={color} />
+                          <text x={tipX + 22} y={tipY + 30 + i * 18} fontSize="11" fill="#555">
+                            {deltaSeries[i].server_name}: {formatBytes(p.value)}
+                          </text>
+                        </g>
+                      )
+                    })}
+                  </g>
+                )
+              })()}
+            </g>
+          )}
+        </svg>
+      )}
+
+      {/* Per-account current totals */}
+      {accounts && accounts.length > 0 && (
+        <div style={{ marginTop: 10, borderTop: '1px solid #f5f5f5', paddingTop: 8, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: '#aaa', alignSelf: 'center', flexShrink: 0 }}>各节点累计</span>
+          {accounts.map((acc, i) => (
+            <div key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <span style={{ width: 16, height: 2, background: SERIES_COLORS[i % SERIES_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
+              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>{withFlag(acc.server_name)}</Tag>
+              <span style={{ color: '#555' }}>{acc.email}</span>
+              <span style={{ color: '#888', fontVariantNumeric: 'tabular-nums' }}>{formatBytes(acc.traffic_used)}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

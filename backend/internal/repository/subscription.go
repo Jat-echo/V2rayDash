@@ -390,6 +390,52 @@ func (r *SubscriptionRepository) LogTraffic(subscriptionID string, trafficBytes 
 	return err
 }
 
+// GetAccountTrafficLogs returns per-account cumulative traffic snapshots for a subscription
+func (r *SubscriptionRepository) GetAccountTrafficLogs(subscriptionID, timeRange string) ([]model.AccountTrafficSeries, error) {
+	interval := timeRangeToInterval(timeRange, "1 day")
+	rows, err := r.db.Query(`
+		SELECT a.id, a.email, srv.name, atl.traffic_bytes, atl.recorded_at
+		FROM subscription_accounts sa
+		JOIN accounts a ON sa.account_id = a.id
+		JOIN servers srv ON a.server_id = srv.id
+		JOIN account_traffic_logs atl ON atl.account_id = a.id
+		WHERE sa.subscription_id = $1
+		  AND atl.recorded_at > NOW() - $2::interval
+		ORDER BY a.id, atl.recorded_at ASC
+	`, subscriptionID, interval)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	seriesMap := make(map[string]*model.AccountTrafficSeries)
+	var order []string
+	for rows.Next() {
+		var accID, email, serverName string
+		var bytes int64
+		var t time.Time
+		if err := rows.Scan(&accID, &email, &serverName, &bytes, &t); err != nil {
+			return nil, err
+		}
+		if _, ok := seriesMap[accID]; !ok {
+			seriesMap[accID] = &model.AccountTrafficSeries{
+				AccountID:  accID,
+				Email:      email,
+				ServerName: serverName,
+				Points:     []model.BandwidthPoint{},
+			}
+			order = append(order, accID)
+		}
+		seriesMap[accID].Points = append(seriesMap[accID].Points, model.BandwidthPoint{Time: t, Value: bytes})
+	}
+
+	result := make([]model.AccountTrafficSeries, 0, len(order))
+	for _, id := range order {
+		result = append(result, *seriesMap[id])
+	}
+	return result, nil
+}
+
 // GetTrafficLogs returns traffic snapshots within the given time range (e.g. "1h", "1d", "7d")
 func (r *SubscriptionRepository) GetTrafficLogs(subscriptionID, timeRange string) ([]model.BandwidthPoint, error) {
 	interval := timeRangeToInterval(timeRange, "1 day")
