@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"runtime"
@@ -228,19 +229,34 @@ func (c *Collector) checkV2ray() string {
 	return "stopped"
 }
 
+// xrayBin returns the xray binary path, preferring the v2ray-agent install location.
+func xrayBin() string {
+	candidates := []string{
+		"/etc/v2ray-agent/xray/xray",
+		"/usr/local/bin/xray",
+		"/usr/bin/xray",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return "xray"
+}
+
 func (c *Collector) getXrayUserTraffic() []model.UserTrafficStat {
 	if runtime.GOOS != "linux" {
 		return nil
 	}
-	// 查询 xray 用户流量并重置计数，获取自上次查询以来的增量
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "xray", "api", "statsquery",
-		"-server", "127.0.0.1:10085",
-		"-pattern", "user",
-		"-reset")
+	cmd := exec.CommandContext(ctx, xrayBin(), "api", "statsquery",
+		"--server=127.0.0.1:10085",
+		"--pattern=user",
+		"--reset")
 	output, err := cmd.Output()
 	if err != nil {
+		log.Printf("xray statsquery error: %v", err)
 		return nil
 	}
 
