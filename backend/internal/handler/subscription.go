@@ -96,6 +96,10 @@ func (h *SubscriptionHandler) Create(c *gin.Context) {
 
 	sub, err := h.repo.Create(&req)
 	if err != nil {
+		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+			c.JSON(http.StatusConflict, gin.H{"error": "已存在同名订阅"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

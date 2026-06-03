@@ -402,7 +402,20 @@ export default function SubscriptionList() {
         width={700}
       >
         <Form form={form} onFinish={handleAdd} layout="vertical" style={{ marginTop: 20 }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+          <Form.Item
+            name="name"
+            label="名称"
+            rules={[
+              { required: true, message: '请输入名称' },
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve()
+                  const duplicate = subscriptions.some(s => s.name === value)
+                  return duplicate ? Promise.reject('已存在同名订阅，请使用其他名称') : Promise.resolve()
+                },
+              },
+            ]}
+          >
             <Input placeholder="例如: VIP用户" />
           </Form.Item>
           <Form.Item name="remark" label="备注">
