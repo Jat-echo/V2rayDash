@@ -718,20 +718,21 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   const [series, setSeries] = useState<AccountTrafficSeries[]>([])
   const [fetching, setFetching] = useState(false)
   const [hoverX, setHoverX] = useState<number | null>(null)
-  const [svgW, setSvgW] = useState(CHART_W)
+  const [svgW, setSvgW] = useState(0)
   const svgRef = useRef<SVGSVGElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
-  // Track actual rendered SVG width for true full-width chart
+  // Observe the wrapper div — div clientWidth is reliable, SVG bbox is not
   useEffect(() => {
-    const el = svgRef.current
+    const el = wrapRef.current
     if (!el) return
-    const obs = new ResizeObserver(entries => {
-      const w = entries[0]?.contentRect.width
-      if (w && w > 0) setSvgW(w)
-    })
+    const update = () => {
+      const w = el.clientWidth
+      if (w > 0) setSvgW(w)
+    }
+    update()
+    const obs = new ResizeObserver(update)
     obs.observe(el)
-    const w = el.getBoundingClientRect().width
-    if (w > 0) setSvgW(w)
     return () => obs.disconnect()
   }, [])
 
@@ -848,18 +849,17 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
         </div>
       </div>
 
-      {/* Chart full width */}
-      <div style={{ width: '100%' }}>
-          {!hasData ? (
+      {/* Chart full width — wrapRef measures actual container pixel width */}
+      <div ref={wrapRef} style={{ width: '100%' }}>
+          {!hasData || svgW === 0 ? (
             <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
-              暂无流量数据（切换时间范围或等待下一次心跳上报后生效）
+              {!hasData ? '暂无流量数据（切换时间范围或等待下一次心跳上报后生效）' : ''}
             </div>
           ) : (
-            <svg ref={svgRef} width="100%" height={CHART_H}
+            <svg ref={svgRef} width={svgW} height={CHART_H}
               style={{ display: 'block', cursor: 'crosshair' }}
               onMouseMove={e => {
-                const rect = svgRef.current!.getBoundingClientRect()
-                setHoverX(e.clientX - rect.left)
+                setHoverX(e.clientX - svgRef.current!.getBoundingClientRect().left)
               }}
               onMouseLeave={() => setHoverX(null)}
             >
