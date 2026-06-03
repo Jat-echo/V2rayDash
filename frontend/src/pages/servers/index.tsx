@@ -103,14 +103,21 @@ export default function ServerList() {
     if (installOutputRef.current) {
       installOutputRef.current.scrollTop = installOutputRef.current.scrollHeight
     }
-    // 检查安装结果
-    if (!installing) return
-    if (installOutput.includes('[ERROR]') || installOutput.includes('失败') || installOutput.includes('✗')) {
-      message.error('安装失败，请查看输出')
-    } else if (installOutput.includes('安装完成') || installOutput.includes('[OK]') || installOutput.includes('Reality配置已保存') || installOutput.includes('安装成功')) {
-      message.success('安装完成！')
+  }, [installOutput])
+
+  // 安装结束后判断最终结果（installing: true→false 时触发）
+  const prevInstalling = useRef(false)
+  useEffect(() => {
+    if (prevInstalling.current && !installing) {
+      // 以 [ERROR] 或 连接失败 为真正的错误标志，忽略 Agent 等非核心步骤的"失败"字样
+      if (installOutput.includes('[ERROR]') || installOutput.includes('❌')) {
+        message.error('安装失败，请查看输出')
+      } else if (installOutput.includes('[OK]') || installOutput.includes('Reality配置已保存') || installOutput.includes('✓ 安装完成')) {
+        message.success('安装完成！')
+      }
     }
-  }, [installOutput, installing])
+    prevInstalling.current = installing
+  }, [installing])
 
   const loadServers = async () => {
     setLoading(true)
