@@ -12,4 +12,17 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('plotly')) return 'plotly.min'
+        },
+        chunkFileNames(chunkInfo) {
+          if (chunkInfo.name === 'plotly.min') return 'assets/plotly.min.js'
+          return 'assets/[name]-[hash].js'
+        },
+      },
+    },
+  },
 })
