@@ -834,8 +834,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
       </div>
 
       {/* Chart full width */}
-      <div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ width: '100%' }}>
           {!hasData ? (
             <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
               暂无流量数据（切换时间范围或等待下一次心跳上报后生效）
@@ -938,7 +937,6 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
               )}
             </svg>
           )}
-        </div>
       </div>
     </div>
   )
