@@ -42,3 +42,12 @@ export function getCountryFlag(name: string): string {
 export function withFlag(name: string): string {
   return `${getCountryFlag(name)} ${name}`
 }
+
+// Returns Twemoji SVG URL for a given emoji character
+export function emojiToSvgUrl(emoji: string): string {
+  const codePoints = [...emoji]
+    .map(c => c.codePointAt(0)!.toString(16))
+    .filter(Boolean)
+    .join('-')
+  return `https://cdn.staticfile.net/twemoji/14.0.2/svg/${codePoints}.svg`
+}

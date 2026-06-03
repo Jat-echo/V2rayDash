@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { Segmented } from 'antd'
 import { serverAPI, logAPI, Server, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
-import { formatBytes, withFlag } from '../../utils/format'
+import { formatBytes } from '../../utils/format'
+import { FlagName } from '../../components/FlagName'
 
 const TIME_RANGES = [
   { label: '1小时', value: '1h' },
@@ -223,7 +224,7 @@ export default function Monitor() {
                 <div className="server-header">
                   <div className="server-info">
                     <div className={`status-dot ${isOnline ? 'online' : 'offline'}`} />
-                    <span className="server-name">{withFlag(server.name)}</span>
+                    <span className="server-name"><FlagName name={server.name} /></span>
                     <span className="server-ip">{server.ip}</span>
                   </div>
                   <div className={`server-badge ${isOnline ? '' : 'offline'}`}>

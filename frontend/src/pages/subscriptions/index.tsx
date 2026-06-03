@@ -6,7 +6,8 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import QRCode from 'qrcode'
 import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, AccountTrafficSeries } from '../../services/api'
-import { formatBytes, withFlag } from '../../utils/format'
+import { formatBytes } from '../../utils/format'
+import { FlagName } from '../../components/FlagName'
 
 interface SubscriptionWithAccounts extends Subscription {
   accounts?: AccountWithServer[]
@@ -308,7 +309,7 @@ export default function SubscriptionList() {
         return (
           <Space direction="vertical" size={2}>
             {record.accounts.map(acc => (
-              <Tag key={acc.id} color="blue">{withFlag(acc.server_name)} / {acc.email}</Tag>
+              <Tag key={acc.id} color="blue"><FlagName name={acc.server_name} /> / {acc.email}</Tag>
             ))}
           </Space>
         )
@@ -447,7 +448,7 @@ export default function SubscriptionList() {
                       onChange={(e) => handleServerSelect(server.id, e.target.checked)}
                       style={{ marginBottom: isSelected ? 8 : 0 }}
                     >
-                      <strong>{withFlag(server.name)}</strong> ({server.ip})
+                      <strong><FlagName name={server.name} /></strong> ({server.ip})
                     </Checkbox>
 
                     {isSelected && (
@@ -595,7 +596,7 @@ export default function SubscriptionList() {
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
               {orphanedAccounts.map(a => (
                 <div key={a.id} style={{ padding: '4px 0', fontSize: 13 }}>
-                  <Tag color="blue" style={{ marginRight: 6 }}>{withFlag(a.server_name)}</Tag>
+                  <Tag color="blue" style={{ marginRight: 6 }}><FlagName name={a.server_name} /></Tag>
                   {a.email}
                 </div>
               ))}
@@ -633,7 +634,7 @@ export default function SubscriptionList() {
                 padding: 12,
                 marginBottom: 8,
               }}>
-                <strong>{withFlag(server.name)}</strong> ({server.ip})
+                <strong><FlagName name={server.name} /></strong> ({server.ip})
                 {hasLinkedAccountFromServer ? (
                   <div style={{ marginTop: 8, color: '#999' }}>已添加此服务器的账号</div>
                 ) : (
@@ -807,7 +808,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
           {deltaSeries.map((s, i) => (
             <div key={s.account_id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
               <span style={{ width: 20, height: 2, background: SERIES_COLORS[i % SERIES_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
-              <span style={{ color: '#666' }}>{withFlag(s.server_name)} / {s.email}</span>
+              <span style={{ color: '#666' }}><FlagName name={s.server_name} /> / {s.email}</span>
             </div>
           ))}
         </div>
@@ -932,7 +933,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
           {accounts.map((acc, i) => (
             <div key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
               <span style={{ width: 16, height: 2, background: SERIES_COLORS[i % SERIES_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
-              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>{withFlag(acc.server_name)}</Tag>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}><FlagName name={acc.server_name} /></Tag>
               <span style={{ color: '#555' }}>{acc.email}</span>
               <span style={{ color: '#888', fontVariantNumeric: 'tabular-nums' }}>{formatBytes(acc.traffic_used)}</span>
             </div>
@@ -980,7 +981,7 @@ function SortableItem({ id, account, onRemove }: { id: string; account: AccountW
           <HolderOutlined />
         </div>
         <div>
-          <div style={{ fontWeight: 'bold' }}>{withFlag(account.server_name)} / {account.email}</div>
+          <div style={{ fontWeight: 'bold' }}><FlagName name={account.server_name} /> / {account.email}</div>
           <div style={{ fontSize: 12, color: '#999' }}>ID: {account.id.substring(0, 8)}...</div>
         </div>
       </div>
