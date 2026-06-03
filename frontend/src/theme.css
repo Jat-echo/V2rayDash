@@ -217,6 +217,14 @@ body {
   background: rgba(201, 169, 166, 0.05);
 }
 
+/* Remove horizontal padding from expanded rows so chart fills full width */
+.ant-table-expanded-row > .ant-table-cell {
+  padding-inline: 0 !important;
+}
+.ant-table-expanded-row-fixed {
+  width: 100% !important;
+}
+
 /* Modal Styling */
 .ant-modal-content {
   border-radius: 16px;
