@@ -796,6 +796,12 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   const yLevels = [0, 0.25, 0.5, 0.75, 1.0]
   const hasData = allTs.length > 0
 
+  // Build left panel: match deltaSeries (colors) with accounts (traffic_used)
+  const leftItems = deltaSeries.map((s, i) => {
+    const acc = accounts?.find(a => a.server_name === s.server_name && a.email === s.email)
+    return { color: SERIES_COLORS[i % SERIES_COLORS.length], serverName: s.server_name, email: s.email, trafficUsed: acc?.traffic_used ?? 0, key: s.account_id }
+  })
+
   return (
     <div style={{ padding: '12px 24px', opacity: fetching ? 0.65 : 1, transition: 'opacity 0.2s' }}>
       {/* Header */}
@@ -812,136 +818,135 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
         </div>
       </div>
 
-      {/* Legend */}
-      {deltaSeries.length > 0 && (
-        <div style={{ display: 'flex', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
-          {deltaSeries.map((s, i) => (
-            <div key={s.account_id} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12 }}>
-              <span style={{ width: 20, height: 2, background: SERIES_COLORS[i % SERIES_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
-              <span style={{ color: '#666' }}><FlagName name={s.server_name} /> / {s.email}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Chart */}
-      {!hasData ? (
-        <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
-          暂无流量数据（切换时间范围或等待下一次心跳上报后生效）
-        </div>
-      ) : (
-        <svg ref={svgRef} width="100%" height={CHART_H}
-          viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-          preserveAspectRatio="xMidYMid meet"
-          style={{ display: 'block', cursor: 'crosshair' }}
-          onMouseMove={e => {
-            const rect = svgRef.current!.getBoundingClientRect()
-            setHoverX((e.clientX - rect.left) * (CHART_W / rect.width))
-          }}
-          onMouseLeave={() => setHoverX(null)}
-        >
-          <defs>
-            {deltaSeries.map((s, i) => (
-              <linearGradient key={s.account_id} id={`fill-${subId}-${i}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={SERIES_COLORS[i % SERIES_COLORS.length]} stopOpacity="0.18" />
-                <stop offset="100%" stopColor={SERIES_COLORS[i % SERIES_COLORS.length]} stopOpacity="0.01" />
-              </linearGradient>
+      {/* Chart + left node panel */}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+        {/* Left: per-node legend + cumulative */}
+        {leftItems.length > 0 && (
+          <div style={{ flexShrink: 0, width: 150, paddingTop: 4 }}>
+            {leftItems.map(item => (
+              <div key={item.key} style={{
+                marginBottom: 14,
+                paddingLeft: 8,
+                borderLeft: `3px solid ${item.color}`,
+              }}>
+                <div style={{ marginBottom: 2 }}>
+                  <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: '0 4px' }}>
+                    <FlagName name={item.serverName} />
+                  </Tag>
+                </div>
+                <div style={{ color: '#555', fontSize: 12, lineHeight: 1.4, wordBreak: 'break-all' }}>{item.email}</div>
+                <div style={{ color: '#999', fontSize: 11, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{formatBytes(item.trafficUsed)}</div>
+              </div>
             ))}
-          </defs>
+          </div>
+        )}
 
-          {/* Y gridlines + labels */}
-          {yLevels.map(level => {
-            const y = PAD_T + innerH - level * innerH
-            return (
-              <g key={level}>
-                <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y}
-                  stroke={level === 0 ? '#ccc' : '#ebebeb'} strokeWidth="1" />
-                <text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize="11" fill="#aaa">
-                  {formatBytes(level * niceMax)}
-                </text>
-              </g>
-            )
-          })}
+        {/* Right: SVG chart */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!hasData ? (
+            <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
+              暂无流量数据（切换时间范围或等待下一次心跳上报后生效）
+            </div>
+          ) : (
+            <svg ref={svgRef} width="100%" height={CHART_H}
+              viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+              preserveAspectRatio="xMidYMid meet"
+              style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseMove={e => {
+                const rect = svgRef.current!.getBoundingClientRect()
+                setHoverX((e.clientX - rect.left) * (CHART_W / rect.width))
+              }}
+              onMouseLeave={() => setHoverX(null)}
+            >
+              <defs>
+                {deltaSeries.map((s, i) => (
+                  <linearGradient key={s.account_id} id={`fill-${subId}-${i}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={SERIES_COLORS[i % SERIES_COLORS.length]} stopOpacity="0.18" />
+                    <stop offset="100%" stopColor={SERIES_COLORS[i % SERIES_COLORS.length]} stopOpacity="0.01" />
+                  </linearGradient>
+                ))}
+              </defs>
 
-          {/* X labels */}
-          {xLabels.map((l, i) => (
-            <text key={i} x={l.x} y={PAD_T + innerH + 18} textAnchor="middle" fontSize="11" fill="#aaa">
-              {l.label}
-            </text>
-          ))}
-
-          {/* Series: fill + smooth line */}
-          {seriesPts.map((pts, i) => {
-            if (pts.length < 2) return null
-            const color = SERIES_COLORS[i % SERIES_COLORS.length]
-            const linePath = smoothPath(pts)
-            const baseY = PAD_T + innerH
-            const fillPath = `${linePath} L ${pts[pts.length-1].x.toFixed(1)} ${baseY} L ${pts[0].x.toFixed(1)} ${baseY} Z`
-            return (
-              <g key={series[i].account_id}>
-                <path d={fillPath} fill={`url(#fill-${subId}-${i})`} />
-                <path d={linePath} fill="none" stroke={color} strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round" />
-              </g>
-            )
-          })}
-
-          {/* Hover overlay */}
-          {hoverXPos !== null && (
-            <g>
-              <line x1={hoverXPos} y1={PAD_T} x2={hoverXPos} y2={PAD_T + innerH}
-                stroke="#bbb" strokeWidth="1" strokeDasharray="4,3" />
-              {hoverPts.map((p, i) => {
-                if (!p) return null
-                return <circle key={i} cx={p.x} cy={p.y} r="4"
-                  fill={SERIES_COLORS[i % SERIES_COLORS.length]} stroke="white" strokeWidth="1.5" />
-              })}
-              {(() => {
-                const tipW = 160, tipH = 18 + hoverPts.filter(Boolean).length * 18 + 6
-                const tipX = hoverXPos + 12 > CHART_W - tipW - PAD_R ? hoverXPos - tipW - 12 : hoverXPos + 12
-                const tipY = PAD_T + 4
-                const timeStr = hoverT !== null ? fmtTime(Math.max(minT, Math.min(maxT, hoverT)), spanMs) : ''
+              {/* Y gridlines + labels */}
+              {yLevels.map(level => {
+                const y = PAD_T + innerH - level * innerH
                 return (
-                  <g>
-                    <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="5"
-                      fill="white" stroke="#e8e8e8" strokeWidth="1"
-                      style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.07))' }} />
-                    <text x={tipX + 10} y={tipY + 14} fontSize="11" fill="#999">{timeStr}</text>
-                    {hoverPts.map((p, i) => {
-                      if (!p) return null
-                      const color = SERIES_COLORS[i % SERIES_COLORS.length]
-                      const row = hoverPts.slice(0, i).filter(Boolean).length
-                      return (
-                        <g key={i}>
-                          <rect x={tipX + 10} y={tipY + 22 + row * 18} width={8} height={2} rx="1" fill={color} />
-                          <text x={tipX + 22} y={tipY + 32 + row * 18} fontSize="11" fill="#555">
-                            {deltaSeries[i].server_name}: {formatBytes(p.value)}
-                          </text>
-                        </g>
-                      )
-                    })}
+                  <g key={level}>
+                    <line x1={PAD_L} y1={y} x2={PAD_L + innerW} y2={y}
+                      stroke={level === 0 ? '#ccc' : '#ebebeb'} strokeWidth="1" />
+                    <text x={PAD_L - 6} y={y + 4} textAnchor="end" fontSize="11" fill="#aaa">
+                      {formatBytes(level * niceMax)}
+                    </text>
                   </g>
                 )
-              })()}
-            </g>
-          )}
-        </svg>
-      )}
+              })}
 
-      {/* Per-account current totals */}
-      {accounts && accounts.length > 0 && (
-        <div style={{ marginTop: 10, borderTop: '1px solid #f5f5f5', paddingTop: 8, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: '#aaa', alignSelf: 'center', flexShrink: 0 }}>各节点累计</span>
-          {accounts.map((acc, i) => (
-            <div key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-              <span style={{ width: 16, height: 2, background: SERIES_COLORS[i % SERIES_COLORS.length], display: 'inline-block', borderRadius: 1 }} />
-              <Tag color="blue" style={{ margin: 0, fontSize: 11 }}><FlagName name={acc.server_name} /></Tag>
-              <span style={{ color: '#555' }}>{acc.email}</span>
-              <span style={{ color: '#888', fontVariantNumeric: 'tabular-nums' }}>{formatBytes(acc.traffic_used)}</span>
-            </div>
-          ))}
+              {/* X labels */}
+              {xLabels.map((l, i) => (
+                <text key={i} x={l.x} y={PAD_T + innerH + 18} textAnchor="middle" fontSize="11" fill="#aaa">
+                  {l.label}
+                </text>
+              ))}
+
+              {/* Series: fill + smooth line */}
+              {seriesPts.map((pts, i) => {
+                if (pts.length < 2) return null
+                const color = SERIES_COLORS[i % SERIES_COLORS.length]
+                const linePath = smoothPath(pts)
+                const baseY = PAD_T + innerH
+                const fillPath = `${linePath} L ${pts[pts.length-1].x.toFixed(1)} ${baseY} L ${pts[0].x.toFixed(1)} ${baseY} Z`
+                return (
+                  <g key={series[i].account_id}>
+                    <path d={fillPath} fill={`url(#fill-${subId}-${i})`} />
+                    <path d={linePath} fill="none" stroke={color} strokeWidth="2"
+                      strokeLinecap="round" strokeLinejoin="round" />
+                  </g>
+                )
+              })}
+
+              {/* Hover overlay */}
+              {hoverXPos !== null && (
+                <g>
+                  <line x1={hoverXPos} y1={PAD_T} x2={hoverXPos} y2={PAD_T + innerH}
+                    stroke="#bbb" strokeWidth="1" strokeDasharray="4,3" />
+                  {hoverPts.map((p, i) => {
+                    if (!p) return null
+                    return <circle key={i} cx={p.x} cy={p.y} r="4"
+                      fill={SERIES_COLORS[i % SERIES_COLORS.length]} stroke="white" strokeWidth="1.5" />
+                  })}
+                  {(() => {
+                    const tipW = 160, tipH = 18 + hoverPts.filter(Boolean).length * 18 + 6
+                    const tipX = hoverXPos + 12 > CHART_W - tipW - PAD_R ? hoverXPos - tipW - 12 : hoverXPos + 12
+                    const tipY = PAD_T + 4
+                    const timeStr = hoverT !== null ? fmtTime(Math.max(minT, Math.min(maxT, hoverT)), spanMs) : ''
+                    return (
+                      <g>
+                        <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="5"
+                          fill="white" stroke="#e8e8e8" strokeWidth="1"
+                          style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.07))' }} />
+                        <text x={tipX + 10} y={tipY + 14} fontSize="11" fill="#999">{timeStr}</text>
+                        {hoverPts.map((p, i) => {
+                          if (!p) return null
+                          const color = SERIES_COLORS[i % SERIES_COLORS.length]
+                          const row = hoverPts.slice(0, i).filter(Boolean).length
+                          return (
+                            <g key={i}>
+                              <rect x={tipX + 10} y={tipY + 22 + row * 18} width={8} height={2} rx="1" fill={color} />
+                              <text x={tipX + 22} y={tipY + 32 + row * 18} fontSize="11" fill="#555">
+                                {deltaSeries[i].server_name}: {formatBytes(p.value)}
+                              </text>
+                            </g>
+                          )
+                        })}
+                      </g>
+                    )
+                  })()}
+                </g>
+              )}
+            </svg>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
