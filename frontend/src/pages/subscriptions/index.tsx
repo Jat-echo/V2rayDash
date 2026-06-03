@@ -804,27 +804,16 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
 
   return (
     <div style={{ padding: '12px 24px', opacity: fetching ? 0.65 : 1, transition: 'opacity 0.2s' }}>
-      {/* Header */}
+      {/* Header: title + legend (centered) + range tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>流量使用趋势</span>
-        <span style={{ color: '#999', fontSize: 13 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {TRAFFIC_RANGES.map(r => (
-            <Button key={r.value} size="small"
-              type={range === r.value ? 'primary' : 'default'}
-              onClick={() => setRange(r.value)}
-            >{r.label}</Button>
-          ))}
-        </div>
-      </div>
-
-      {/* Node legend: horizontal wrap */}
-      {leftItems.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', marginBottom: 10 }}>
+        <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>流量使用趋势</span>
+        <span style={{ color: '#999', fontSize: 13, flexShrink: 0 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
+        {/* Node legend centered */}
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '4px 16px' }}>
           {leftItems.map(item => (
             <div key={item.key} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              paddingLeft: 8, borderLeft: `3px solid ${item.color}`,
+              display: 'flex', alignItems: 'center', gap: 5,
+              paddingLeft: 7, borderLeft: `3px solid ${item.color}`,
             }}>
               <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: '0 4px', flexShrink: 0 }}>
                 <FlagName name={item.serverName} />
@@ -834,7 +823,15 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
             </div>
           ))}
         </div>
-      )}
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          {TRAFFIC_RANGES.map(r => (
+            <Button key={r.value} size="small"
+              type={range === r.value ? 'primary' : 'default'}
+              onClick={() => setRange(r.value)}
+            >{r.label}</Button>
+          ))}
+        </div>
+      </div>
 
       {/* Chart full width */}
       <div>
