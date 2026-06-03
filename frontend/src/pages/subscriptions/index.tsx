@@ -818,30 +818,26 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
         </div>
       </div>
 
-      {/* Chart + left node panel */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        {/* Left: per-node legend + cumulative */}
-        {leftItems.length > 0 && (
-          <div style={{ flexShrink: 0, width: 150, paddingTop: 4 }}>
-            {leftItems.map(item => (
-              <div key={item.key} style={{
-                marginBottom: 14,
-                paddingLeft: 8,
-                borderLeft: `3px solid ${item.color}`,
-              }}>
-                <div style={{ marginBottom: 2 }}>
-                  <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: '0 4px' }}>
-                    <FlagName name={item.serverName} />
-                  </Tag>
-                </div>
-                <div style={{ color: '#555', fontSize: 12, lineHeight: 1.4, wordBreak: 'break-all' }}>{item.email}</div>
-                <div style={{ color: '#999', fontSize: 11, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{formatBytes(item.trafficUsed)}</div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* Node legend: horizontal wrap */}
+      {leftItems.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 20px', marginBottom: 10 }}>
+          {leftItems.map(item => (
+            <div key={item.key} style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              paddingLeft: 8, borderLeft: `3px solid ${item.color}`,
+            }}>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: '0 4px', flexShrink: 0 }}>
+                <FlagName name={item.serverName} />
+              </Tag>
+              <span style={{ color: '#555', fontSize: 12 }}>{item.email}</span>
+              <span style={{ color: '#999', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{formatBytes(item.trafficUsed)}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-        {/* Right: SVG chart */}
+      {/* Chart full width */}
+      <div>
         <div style={{ flex: 1, minWidth: 0 }}>
           {!hasData ? (
             <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
@@ -952,6 +948,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
 }
 
 // Sortable item component
+
 function SortableItem({ id, account, onRemove }: { id: string; account: AccountWithServer; onRemove: () => void }) {
   const {
     attributes,
