@@ -673,6 +673,7 @@ export default function SubscriptionList() {
 // Traffic monitoring detail row
 const TRAFFIC_RANGES = [
   { label: '1小时', value: '1h' },
+  { label: '3小时', value: '3h' },
   { label: '6小时', value: '6h' },
   { label: '1天', value: '1d' },
   { label: '7天', value: '7d' },
@@ -714,7 +715,7 @@ function smoothPath(pts: { x: number; y: number }[]): string {
 }
 
 function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountWithServer[] }) {
-  const [range, setRange] = useState('1d')
+  const [range, setRange] = useState('3h')
   const [series, setSeries] = useState<AccountTrafficSeries[]>([])
   const [fetching, setFetching] = useState(false)
   const [hoverX, setHoverX] = useState<number | null>(null)
