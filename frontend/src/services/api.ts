@@ -181,6 +181,8 @@ export const subscriptionAPI = {
   },
   listFull: () => api.get<Subscription[]>('/subscriptions/full').then(r => r.data),
   create: (data: CreateSubscriptionRequest) => api.post<Subscription>('/subscriptions', data).then(r => r.data),
+  update: (id: string, data: { name?: string; remark?: string; enable?: boolean; traffic_limit?: number }) =>
+    api.put(`/subscriptions/${id}`, data),
   delete: (id: string) => api.delete(`/subscriptions/${id}`),
   getLink: (id: string) => api.get<{ link: string; encoded: string }>(`/subscriptions/${id}/link`).then(r => r.data),
   addAccount: (id: string, data: AccountMapping) =>

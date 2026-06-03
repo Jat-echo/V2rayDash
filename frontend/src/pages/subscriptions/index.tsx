@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Card, Tag, Checkbox, Popconfirm, Progress, Spin } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card, Tag, Checkbox, Divider, Progress, Spin } from 'antd'
 import { CopyOutlined, QrcodeOutlined, HolderOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -30,6 +30,9 @@ export default function SubscriptionList() {
   const [managedAccounts, setManagedAccounts] = useState<AccountWithServer[]>([])
   const [manageSubscriptionId, setManageSubscriptionId] = useState<string>('')
   const [manageSubscriptionName, setManageSubscriptionName] = useState<string>('')
+  const [editEnable, setEditEnable] = useState(true)
+  const [editRemark, setEditRemark] = useState('')
+  const [savingInfo, setSavingInfo] = useState(false)
   const [addAccountModalVisible, setAddAccountModalVisible] = useState(false)
   const [deleteModalVisible, setDeleteModalVisible] = useState(false)
   const [pendingDeleteSub, setPendingDeleteSub] = useState<SubscriptionWithAccounts | null>(null)
@@ -213,12 +216,27 @@ export default function SubscriptionList() {
   const openManageModal = async (record: SubscriptionWithAccounts) => {
     setManageSubscriptionId(record.id)
     setManageSubscriptionName(record.name)
+    setEditEnable(record.enable)
+    setEditRemark(record.remark || '')
     try {
       const accounts = await subscriptionAPI.getAccounts(record.id)
       setManagedAccounts(accounts || [])
       setManageModalVisible(true)
     } catch (e) {
       message.error('加载账号失败')
+    }
+  }
+
+  const handleSaveInfo = async () => {
+    setSavingInfo(true)
+    try {
+      await subscriptionAPI.update(manageSubscriptionId, { enable: editEnable, remark: editRemark })
+      message.success('保存成功')
+      loadData()
+    } catch {
+      message.error('保存失败')
+    } finally {
+      setSavingInfo(false)
     }
   }
 
@@ -327,7 +345,7 @@ export default function SubscriptionList() {
       render: (_: any, record: SubscriptionWithAccounts) => (
         <Space>
           <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
-          <Button size="small" onClick={() => openManageModal(record)}>管理账号</Button>
+          <Button size="small" onClick={() => openManageModal(record)}>编辑</Button>
           <Button size="small" danger onClick={() => triggerDelete(record)}>删除</Button>
         </Space>
       ),
@@ -489,17 +507,38 @@ export default function SubscriptionList() {
         </div>
       </Modal>
 
-      {/* Manage Accounts Modal */}
+      {/* Edit Modal */}
       <Modal
-        title="管理账号"
+        title={`编辑订阅 · ${manageSubscriptionName}`}
         open={manageModalVisible}
         onCancel={() => setManageModalVisible(false)}
         footer={null}
         width={600}
       >
         <div style={{ marginTop: 16 }}>
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button type="primary" onClick={() => setAddAccountModalVisible(true)}>
+          {/* 基本信息 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>启用</span>
+              <Switch checked={editEnable} onChange={setEditEnable} size="small" />
+            </div>
+            <Input
+              value={editRemark}
+              onChange={e => setEditRemark(e.target.value)}
+              placeholder="备注（可选）"
+              style={{ flex: 1 }}
+              size="small"
+            />
+            <Button type="primary" size="small" loading={savingInfo} onClick={handleSaveInfo}>
+              保存
+            </Button>
+          </div>
+
+          <Divider style={{ margin: '12px 0' }} />
+
+          {/* 账号管理 */}
+          <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
+            <Button type="primary" size="small" onClick={() => setAddAccountModalVisible(true)}>
               添加账号
             </Button>
           </div>
