@@ -689,19 +689,18 @@ const PAD_B = 28
 // Morandi-ish multi-series colors
 const SERIES_COLORS = ['#5B8DB8', '#C87D55', '#6BA87C', '#9B6B9B', '#B8936A']
 
-function formatTimeLabel(isoTime: string, range: string): string {
-  const d = new Date(isoTime)
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  if (range === '1h' || range === '6h') {
-    return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  } else if (range === '1d') {
-    return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-  } else {
-    return `${d.getMonth() + 1}/${d.getDate()}`
-  }
+const pad2 = (n: number) => n.toString().padStart(2, '0')
+
+// Format time label based on actual data span (not selected range)
+function fmtTime(ms: number, spanMs: number): string {
+  const d = new Date(ms)
+  const hours = spanMs / 3_600_000
+  if (hours < 2) return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  if (hours < 48) return `${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-// Smooth bezier path through points
+// Smooth bezier path
 function smoothPath(pts: { x: number; y: number }[]): string {
   if (pts.length < 2) return ''
   let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`
@@ -721,16 +720,17 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   const [hoverX, setHoverX] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
-  const load = useCallback(async () => {
+  // Direct effect on [subId, range] — no useCallback indirection
+  useEffect(() => {
+    let cancelled = false
     setFetching(true)
-    try {
-      const data = await subscriptionAPI.getAccountTrafficLogs(subId, range)
-      setSeries(data || [])
-    } catch {}
-    finally { setFetching(false) }
+    setHoverX(null)
+    subscriptionAPI.getAccountTrafficLogs(subId, range)
+      .then(data => { if (!cancelled) setSeries(data || []) })
+      .catch(() => { if (!cancelled) setSeries([]) })
+      .finally(() => { if (!cancelled) setFetching(false) })
+    return () => { cancelled = true }
   }, [subId, range])
-
-  useEffect(() => { load() }, [load])
 
   const innerW = CHART_W - PAD_L - PAD_R
   const innerH = CHART_H - PAD_T - PAD_B
@@ -738,53 +738,63 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   // Compute delta series (traffic consumed per interval)
   const deltaSeries = series.map(s => ({
     ...s,
-    deltas: s.points.map((p, i) => ({
-      time: typeof p.time === 'string' ? p.time : new Date(p.time).toISOString(),
-      value: i === 0 ? 0 : Math.max(0, p.value - s.points[i - 1].value),
-    })),
+    deltas: s.points.map((p, i) => {
+      const t = typeof p.time === 'string' ? new Date(p.time).getTime() : (p.time as unknown as Date).getTime()
+      return {
+        t,
+        value: i === 0 ? 0 : Math.max(0, p.value - s.points[i - 1].value),
+      }
+    }),
   }))
 
   const totalDelta = deltaSeries.reduce((sum, s) =>
     sum + s.deltas.reduce((a, p) => a + p.value, 0), 0)
 
-  // Unified time axis: union of all timestamps
-  const allTimes = Array.from(new Set(
-    deltaSeries.flatMap(s => s.deltas.map(p => p.time))
-  )).sort()
+  // Overall time range from actual data
+  const allTs = deltaSeries.flatMap(s => s.deltas.map(p => p.t)).filter(Boolean)
+  const minT = allTs.length ? Math.min(...allTs) : 0
+  const maxT = allTs.length ? Math.max(...allTs) : 1
+  const spanMs = Math.max(maxT - minT, 1)
 
-  const nPts = allTimes.length
+  // Y-axis
   const allValues = deltaSeries.flatMap(s => s.deltas.map(p => p.value))
   const maxVal = Math.max(...allValues, 1)
   const magnitude = Math.pow(10, Math.floor(Math.log10(maxVal)))
   const niceMax = Math.ceil(maxVal / magnitude) * magnitude
 
-  // Build SVG points per series (aligned to allTimes)
-  const seriesPts = deltaSeries.map(s => {
-    const timeMap = new Map(s.deltas.map(p => [p.time, p.value]))
-    return allTimes.map((t, i) => {
-      const val = timeMap.get(t) ?? 0
-      const x = PAD_L + (nPts <= 1 ? innerW / 2 : (i / (nPts - 1)) * innerW)
-      const y = PAD_T + innerH - (val / niceMax) * innerH
-      return { x, y, time: t, value: val }
-    })
-  })
+  // Map time → SVG X coordinate
+  const toX = (t: number) => PAD_L + ((t - minT) / spanMs) * innerW
+  const toY = (v: number) => PAD_T + innerH - (v / niceMax) * innerH
 
-  // X-axis label indices
-  const xCount = Math.min(nPts, 6)
-  const xIndices = xCount <= 1 ? [0] : Array.from({ length: xCount }, (_, i) =>
-    Math.round(i * (nPts - 1) / (xCount - 1))
+  // Build SVG points per series (each series uses its own timestamps)
+  const seriesPts = deltaSeries.map(s =>
+    s.deltas.map(p => ({ x: toX(p.t), y: toY(p.value), t: p.t, value: p.value }))
   )
 
-  // Hover: find nearest X index
-  const hoverIdx = hoverX === null ? null : Math.max(0, Math.min(nPts - 1,
-    Math.round(((hoverX - PAD_L) / innerW) * (nPts - 1))
-  ))
-  const hoverXPos = hoverIdx !== null && nPts > 1
-    ? PAD_L + (hoverIdx / (nPts - 1)) * innerW
+  // X-axis: 6 evenly-spaced labels across [minT, maxT]
+  const xLabels = allTs.length > 0
+    ? Array.from({ length: 6 }, (_, i) => {
+        const t = minT + (i / 5) * spanMs
+        return { x: PAD_L + (i / 5) * innerW, label: fmtTime(t, spanMs) }
+      })
+    : []
+
+  // Hover: find nearest point per series
+  const hoverT = hoverX !== null ? minT + ((hoverX - PAD_L) / innerW) * spanMs : null
+  const hoverPts = hoverT !== null
+    ? seriesPts.map(pts => {
+        if (!pts.length) return null
+        return pts.reduce((best, p) =>
+          Math.abs(p.t - hoverT) < Math.abs(best.t - hoverT) ? p : best
+        )
+      })
+    : seriesPts.map(() => null)
+  const hoverXPos = hoverPts.some(p => p !== null) && hoverT !== null
+    ? toX(Math.max(minT, Math.min(maxT, hoverT)))
     : null
 
   const yLevels = [0, 0.25, 0.5, 0.75, 1.0]
-  const hasData = nPts > 0
+  const hasData = allTs.length > 0
 
   return (
     <div style={{ padding: '12px 24px', opacity: fetching ? 0.65 : 1, transition: 'opacity 0.2s' }}>
@@ -826,8 +836,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
           style={{ display: 'block', cursor: 'crosshair' }}
           onMouseMove={e => {
             const rect = svgRef.current!.getBoundingClientRect()
-            const x = (e.clientX - rect.left) * (CHART_W / rect.width)
-            setHoverX(x)
+            setHoverX((e.clientX - rect.left) * (CHART_W / rect.width))
           }}
           onMouseLeave={() => setHoverX(null)}
         >
@@ -840,7 +849,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
             ))}
           </defs>
 
-          {/* Gridlines + Y labels */}
+          {/* Y gridlines + labels */}
           {yLevels.map(level => {
             const y = PAD_T + innerH - level * innerH
             return (
@@ -855,15 +864,11 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
           })}
 
           {/* X labels */}
-          {xIndices.map(idx => {
-            if (!allTimes[idx]) return null
-            const x = PAD_L + (nPts <= 1 ? innerW / 2 : (idx / (nPts - 1)) * innerW)
-            return (
-              <text key={idx} x={x} y={PAD_T + innerH + 18} textAnchor="middle" fontSize="11" fill="#aaa">
-                {formatTimeLabel(allTimes[idx], range)}
-              </text>
-            )
-          })}
+          {xLabels.map((l, i) => (
+            <text key={i} x={l.x} y={PAD_T + innerH + 18} textAnchor="middle" fontSize="11" fill="#aaa">
+              {l.label}
+            </text>
+          ))}
 
           {/* Series: fill + smooth line */}
           {seriesPts.map((pts, i) => {
@@ -871,7 +876,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
             const color = SERIES_COLORS[i % SERIES_COLORS.length]
             const linePath = smoothPath(pts)
             const baseY = PAD_T + innerH
-            const fillPath = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)} ${baseY} L ${pts[0].x.toFixed(1)} ${baseY} Z`
+            const fillPath = `${linePath} L ${pts[pts.length-1].x.toFixed(1)} ${baseY} L ${pts[0].x.toFixed(1)} ${baseY} Z`
             return (
               <g key={series[i].account_id}>
                 <path d={fillPath} fill={`url(#fill-${subId}-${i})`} />
@@ -881,38 +886,35 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
             )
           })}
 
-          {/* Hover: vertical line + dots + tooltip */}
-          {hoverIdx !== null && hoverXPos !== null && (
+          {/* Hover overlay */}
+          {hoverXPos !== null && (
             <g>
               <line x1={hoverXPos} y1={PAD_T} x2={hoverXPos} y2={PAD_T + innerH}
-                stroke="#ccc" strokeWidth="1" strokeDasharray="4,3" />
-              {seriesPts.map((pts, i) => {
-                const p = pts[hoverIdx]
+                stroke="#bbb" strokeWidth="1" strokeDasharray="4,3" />
+              {hoverPts.map((p, i) => {
                 if (!p) return null
-                const color = SERIES_COLORS[i % SERIES_COLORS.length]
-                return <circle key={i} cx={p.x} cy={p.y} r="4" fill={color} stroke="white" strokeWidth="1.5" />
+                return <circle key={i} cx={p.x} cy={p.y} r="4"
+                  fill={SERIES_COLORS[i % SERIES_COLORS.length]} stroke="white" strokeWidth="1.5" />
               })}
-              {/* Tooltip box */}
               {(() => {
-                const tipW = 148, tipH = 16 + seriesPts.length * 18 + 6
-                const tipX = hoverXPos + 10 > CHART_W - tipW - PAD_R ? hoverXPos - tipW - 10 : hoverXPos + 10
+                const tipW = 160, tipH = 18 + hoverPts.filter(Boolean).length * 18 + 6
+                const tipX = hoverXPos + 12 > CHART_W - tipW - PAD_R ? hoverXPos - tipW - 12 : hoverXPos + 12
                 const tipY = PAD_T + 4
+                const timeStr = hoverT !== null ? fmtTime(Math.max(minT, Math.min(maxT, hoverT)), spanMs) : ''
                 return (
                   <g>
                     <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="5"
-                      fill="white" stroke="#e0e0e0" strokeWidth="1"
-                      style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.08))' }} />
-                    <text x={tipX + 10} y={tipY + 14} fontSize="11" fill="#888">
-                      {formatTimeLabel(allTimes[hoverIdx] ?? '', range)}
-                    </text>
-                    {seriesPts.map((pts, i) => {
-                      const p = pts[hoverIdx]
+                      fill="white" stroke="#e8e8e8" strokeWidth="1"
+                      style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.07))' }} />
+                    <text x={tipX + 10} y={tipY + 14} fontSize="11" fill="#999">{timeStr}</text>
+                    {hoverPts.map((p, i) => {
                       if (!p) return null
                       const color = SERIES_COLORS[i % SERIES_COLORS.length]
+                      const row = hoverPts.slice(0, i).filter(Boolean).length
                       return (
                         <g key={i}>
-                          <rect x={tipX + 10} y={tipY + 20 + i * 18} width={8} height={2} rx="1" fill={color} />
-                          <text x={tipX + 22} y={tipY + 30 + i * 18} fontSize="11" fill="#555">
+                          <rect x={tipX + 10} y={tipY + 22 + row * 18} width={8} height={2} rx="1" fill={color} />
+                          <text x={tipX + 22} y={tipY + 32 + row * 18} fontSize="11" fill="#555">
                             {deltaSeries[i].server_name}: {formatBytes(p.value)}
                           </text>
                         </g>
