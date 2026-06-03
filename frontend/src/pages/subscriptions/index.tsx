@@ -718,7 +718,22 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   const [series, setSeries] = useState<AccountTrafficSeries[]>([])
   const [fetching, setFetching] = useState(false)
   const [hoverX, setHoverX] = useState<number | null>(null)
+  const [svgW, setSvgW] = useState(CHART_W)
   const svgRef = useRef<SVGSVGElement>(null)
+
+  // Track actual rendered SVG width for true full-width chart
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width
+      if (w && w > 0) setSvgW(w)
+    })
+    obs.observe(el)
+    const w = el.getBoundingClientRect().width
+    if (w > 0) setSvgW(w)
+    return () => obs.disconnect()
+  }, [])
 
   // Direct effect on [subId, range] — no useCallback indirection
   useEffect(() => {
@@ -732,7 +747,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
     return () => { cancelled = true }
   }, [subId, range])
 
-  const innerW = CHART_W - PAD_L - PAD_R
+  const innerW = svgW - PAD_L - PAD_R
   const innerH = CHART_H - PAD_T - PAD_B
 
   // Compute delta series (traffic consumed per interval)
@@ -841,12 +856,10 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
             </div>
           ) : (
             <svg ref={svgRef} width="100%" height={CHART_H}
-              viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-              preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
               onMouseMove={e => {
                 const rect = svgRef.current!.getBoundingClientRect()
-                setHoverX((e.clientX - rect.left) * (CHART_W / rect.width))
+                setHoverX(e.clientX - rect.left)
               }}
               onMouseLeave={() => setHoverX(null)}
             >
@@ -908,7 +921,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
                   })}
                   {(() => {
                     const tipW = 160, tipH = 18 + hoverPts.filter(Boolean).length * 18 + 6
-                    const tipX = hoverXPos + 12 > CHART_W - tipW - PAD_R ? hoverXPos - tipW - 12 : hoverXPos + 12
+                    const tipX = hoverXPos + 12 > svgW - tipW - PAD_R ? hoverXPos - tipW - 12 : hoverXPos + 12
                     const tipY = PAD_T + 4
                     const timeStr = hoverT !== null ? fmtTime(Math.max(minT, Math.min(maxT, hoverT)), spanMs) : ''
                     return (
