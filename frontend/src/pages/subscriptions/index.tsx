@@ -818,9 +818,9 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   })
 
   return (
-    <div style={{ padding: '12px 24px', opacity: fetching ? 0.65 : 1, transition: 'opacity 0.2s' }}>
+    <div style={{ padding: '8px 0', opacity: fetching ? 0.65 : 1, transition: 'opacity 0.2s' }}>
       {/* Header: title + legend (centered) + range tabs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '0 16px' }}>
         <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>流量使用趋势</span>
         <span style={{ color: '#999', fontSize: 13, flexShrink: 0 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
         {/* Node legend centered */}
