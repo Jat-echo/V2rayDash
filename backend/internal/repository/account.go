@@ -39,6 +39,22 @@ func (r *AccountRepository) Create(req *model.CreateAccountRequest) (*model.Acco
 	return r.GetByID(id)
 }
 
+// Upsert inserts or updates an account by uuid — used when importing from remote.
+func (r *AccountRepository) Upsert(req *model.CreateAccountRequest) (*model.Account, error) {
+	var id string
+	err := r.db.QueryRow(
+		`INSERT INTO accounts (server_id, uuid, email, protocols)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (uuid) DO UPDATE SET email=EXCLUDED.email, protocols=EXCLUDED.protocols, updated_at=CURRENT_TIMESTAMP
+		 RETURNING id`,
+		req.ServerID, req.UUID, req.Email, pq.Array(req.Protocols),
+	).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetByID(id)
+}
+
 func (r *AccountRepository) GetByID(id string) (*model.Account, error) {
 	var a model.Account
 	var protocols pq.StringArray
@@ -155,5 +171,30 @@ func (r *AccountRepository) Update(id string, req *model.UpdateAccountRequest) e
 
 func (r *AccountRepository) Delete(id string) error {
 	_, err := r.db.Exec("DELETE FROM accounts WHERE id = $1", id)
+	return err
+}
+
+// GetByServerIDAndEmail finds an account by server ID and email (used for traffic attribution)
+func (r *AccountRepository) GetByServerIDAndEmail(serverID, email string) (*model.Account, error) {
+	var a model.Account
+	var protocols pq.StringArray
+	err := r.db.QueryRow(
+		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, created_at, updated_at
+		 FROM accounts WHERE server_id = $1 AND email = $2 LIMIT 1`,
+		serverID, email,
+	).Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	a.Protocols = protocols
+	return &a, nil
+}
+
+// AddTrafficUsed atomically adds bytes to account traffic_used
+func (r *AccountRepository) AddTrafficUsed(id string, bytes int64) error {
+	_, err := r.db.Exec(
+		`UPDATE accounts SET traffic_used = traffic_used + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+		bytes, id,
+	)
 	return err
 }

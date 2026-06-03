@@ -2,6 +2,8 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -120,7 +122,27 @@ func (r *SubscriptionRepository) ListByServerID(serverID string) ([]*model.Subsc
 }
 
 func (r *SubscriptionRepository) Update(id string, req *model.UpdateSubscriptionRequest) error {
-	_, err := r.db.Exec(`UPDATE subscriptions SET updated_at = $1 WHERE id = $2`, time.Now(), id)
+	setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
+	args := []interface{}{}
+	idx := 1
+	if req.Name != nil {
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", idx))
+		args = append(args, *req.Name)
+		idx++
+	}
+	if req.Enable != nil {
+		setClauses = append(setClauses, fmt.Sprintf("enable = $%d", idx))
+		args = append(args, *req.Enable)
+		idx++
+	}
+	if req.TrafficLimit != nil {
+		setClauses = append(setClauses, fmt.Sprintf("traffic_limit = $%d", idx))
+		args = append(args, *req.TrafficLimit)
+		idx++
+	}
+	args = append(args, id)
+	query := fmt.Sprintf("UPDATE subscriptions SET %s WHERE id = $%d", strings.Join(setClauses, ", "), idx)
+	_, err := r.db.Exec(query, args...)
 	return err
 }
 
@@ -314,4 +336,71 @@ func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.Subscrip
 
 func generateUUID() string {
 	return uuid.New().String()
+}
+
+// GetByAccountID returns all subscription IDs that contain the given account
+func (r *SubscriptionRepository) GetByAccountID(accountID string) ([]string, error) {
+	rows, err := r.db.Query(
+		`SELECT subscription_id FROM subscription_accounts WHERE account_id = $1`,
+		accountID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// RecalcTrafficUsed recalculates subscription.traffic_used as the sum of its accounts' traffic_used
+func (r *SubscriptionRepository) RecalcTrafficUsed(subscriptionID string) error {
+	_, err := r.db.Exec(`
+		UPDATE subscriptions SET
+			traffic_used = (
+				SELECT COALESCE(SUM(a.traffic_used), 0)
+				FROM subscription_accounts sa
+				JOIN accounts a ON a.id = sa.account_id
+				WHERE sa.subscription_id = $1
+			),
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1`, subscriptionID)
+	return err
+}
+
+// LogTraffic inserts a traffic snapshot for time-series charting
+func (r *SubscriptionRepository) LogTraffic(subscriptionID string, trafficBytes int64) error {
+	_, err := r.db.Exec(
+		`INSERT INTO subscription_traffic_logs (subscription_id, traffic_bytes) VALUES ($1, $2)`,
+		subscriptionID, trafficBytes,
+	)
+	return err
+}
+
+// GetTrafficLogs returns traffic snapshots within the given time range (e.g. "1h", "1d", "7d")
+func (r *SubscriptionRepository) GetTrafficLogs(subscriptionID, timeRange string) ([]model.BandwidthPoint, error) {
+	interval := timeRangeToInterval(timeRange, "1 day")
+	rows, err := r.db.Query(`
+		SELECT traffic_bytes, recorded_at FROM subscription_traffic_logs
+		WHERE subscription_id = $1 AND recorded_at > NOW() - $2::interval
+		ORDER BY recorded_at ASC`, subscriptionID, interval)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var points []model.BandwidthPoint
+	for rows.Next() {
+		var p model.BandwidthPoint
+		if err := rows.Scan(&p.Value, &p.Time); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+	return points, nil
 }

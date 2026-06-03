@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -35,6 +36,8 @@ func (c *Client) ReportStatus(status *model.NodeStatus) error {
 	if err != nil {
 		return err
 	}
+
+	log.Printf("Reporting status: CPU=%.2f, Mem=%.2f, Disk=%.2f, V2ray=%s", status.CPUPercent, status.MemoryPercent, status.DiskPercent, status.V2rayStatus)
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {

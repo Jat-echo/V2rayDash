@@ -59,25 +59,43 @@ func (h *LogHandler) ListNodeStatuses(c *gin.Context) {
 }
 
 func buildNodeStatusResponse(serverID string, statuses []*model.NodeStatus) model.NodeStatusResponse {
-	// Calculate bandwidth delta
-	var baseIn, baseOut int64
-	if len(statuses) > 0 {
-		baseIn = statuses[0].BandwidthIn
-		baseOut = statuses[0].BandwidthOut
-	}
-
 	cpu := make([]model.MetricPoint, 0, len(statuses))
 	memory := make([]model.MetricPoint, 0, len(statuses))
 	disk := make([]model.MetricPoint, 0, len(statuses))
 	bandwidthIn := make([]model.BandwidthPoint, 0, len(statuses))
 	bandwidthOut := make([]model.BandwidthPoint, 0, len(statuses))
 
-	for _, s := range statuses {
+	// Calculate bandwidth delta (change between consecutive points)
+	var prevIn, prevOut int64
+	for i, s := range statuses {
 		cpu = append(cpu, model.MetricPoint{Time: s.ReportedAt, Value: s.CPUPercent})
 		memory = append(memory, model.MetricPoint{Time: s.ReportedAt, Value: s.MemoryPercent})
 		disk = append(disk, model.MetricPoint{Time: s.ReportedAt, Value: s.DiskPercent})
-		bandwidthIn = append(bandwidthIn, model.BandwidthPoint{Time: s.ReportedAt, Value: s.BandwidthIn - baseIn})
-		bandwidthOut = append(bandwidthOut, model.BandwidthPoint{Time: s.ReportedAt, Value: s.BandwidthOut - baseOut})
+
+		// Calculate delta between consecutive points; negative delta means counter reset (reboot), treat as 0
+		var deltaIn, deltaOut int64
+		if i > 0 {
+			deltaIn = s.BandwidthIn - prevIn
+			deltaOut = s.BandwidthOut - prevOut
+			if deltaIn < 0 {
+				deltaIn = 0
+			}
+			if deltaOut < 0 {
+				deltaOut = 0
+			}
+		}
+		bandwidthIn = append(bandwidthIn, model.BandwidthPoint{Time: s.ReportedAt, Value: deltaIn})
+		bandwidthOut = append(bandwidthOut, model.BandwidthPoint{Time: s.ReportedAt, Value: deltaOut})
+		prevIn = s.BandwidthIn
+		prevOut = s.BandwidthOut
+	}
+
+	// Count xray restart events: transitions stopped→running after the first point
+	v2rayRestarts := 0
+	for i := 1; i < len(statuses); i++ {
+		if statuses[i-1].V2rayStatus != "running" && statuses[i].V2rayStatus == "running" {
+			v2rayRestarts++
+		}
 	}
 
 	latest := statuses[len(statuses)-1]
@@ -100,5 +118,6 @@ func buildNodeStatusResponse(serverID string, statuses []*model.NodeStatus) mode
 			V2rayStatus:   latest.V2rayStatus,
 			ReportedAt:    latest.ReportedAt,
 		},
+		V2rayRestarts: v2rayRestarts,
 	}
 }

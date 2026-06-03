@@ -1,0 +1,16 @@
+# Go binaries
+backend/v2ray-dash-server
+backend/v2ray-dash-backend
+agent/v2ray-agent
+
+# Frontend build output and dependencies
+frontend/dist/
+frontend/node_modules/
+
+# Scripts generated
+scripts/install-agent.sh
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo

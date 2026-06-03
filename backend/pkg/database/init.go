@@ -28,6 +28,22 @@ func runMigrations(db *DB) error {
 	// Migration: Add sort_order, note, updated_at columns to subscription_accounts if they don't exist
 	// Using proper PostgreSQL DO blocks to check column existence before adding
 	migrations := []string{
+		// 管理员用户表
+		`CREATE TABLE IF NOT EXISTS admin_users (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			username VARCHAR(50) NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// 订阅流量日志表（用于时间序列流量图表）
+		`CREATE TABLE IF NOT EXISTS subscription_traffic_logs (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			subscription_id UUID NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+			traffic_bytes BIGINT NOT NULL DEFAULT 0,
+			recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sub_traffic_logs ON subscription_traffic_logs(subscription_id, recorded_at)`,
 		`DO $$
 		BEGIN
 			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'subscription_accounts' AND column_name = 'sort_order') THEN

@@ -123,5 +123,6 @@ CREATE TABLE IF NOT EXISTS system_settings (
 
 -- 初始化默认设置
 INSERT INTO system_settings (id, value, description) VALUES
-    ('public_url', 'http://localhost:8080', '控制中心公网访问地址')
+    ('public_url', 'http://localhost:8080', '控制中心公网访问地址'),
+    ('auth_token', '', '管理员认证令牌')
 ON CONFLICT (id) DO NOTHING;

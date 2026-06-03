@@ -5,6 +5,37 @@ const api = axios.create({
   timeout: 30000,
 })
 
+// 自动附加 token
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('admin_token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// 401 → 跳转登录
+api.interceptors.response.use(
+  r => r,
+  err => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('admin_token')
+      localStorage.removeItem('admin_username')
+      window.location.href = '/'
+    }
+    return Promise.reject(err)
+  }
+)
+
+export const authAPI = {
+  status: () => fetch('/api/auth/status').then(r => r.json()) as Promise<{ setup_required: boolean }>,
+  setup: (username: string, password: string) =>
+    fetch('/api/auth/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(r => r.json()),
+  login: (username: string, password: string) =>
+    fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }).then(r => r.json()),
+  logout: () => api.post('/auth/logout'),
+  changePassword: (old_password: string, new_password: string) =>
+    api.put('/auth/password', { old_password, new_password }).then(r => r.data),
+}
+
 export interface Server {
   id: string
   name: string
@@ -117,6 +148,7 @@ export interface NodeStatusResponse {
   server_id: string
   metrics: NodeStatusMetrics
   current: NodeStatusCurrent
+  v2ray_restarts: number
 }
 
 export interface NodeStatus {
@@ -137,6 +169,7 @@ export const serverAPI = {
   create: (data: Partial<Server>) => api.post<Server>('/servers', data).then(r => r.data),
   update: (id: string, data: Partial<Server>) => api.put(`/servers/${id}`, data),
   delete: (id: string) => api.delete(`/servers/${id}`),
+  restartXray: (id: string) => api.post(`/servers/${id}/restart-xray`).then(r => r.data),
 }
 
 export const subscriptionAPI = {
@@ -156,6 +189,8 @@ export const subscriptionAPI = {
     api.put(`/subscriptions/${id}/accounts/order`, order),
   getAccounts: (id: string) =>
     api.get<AccountWithServer[]>(`/subscriptions/${id}/accounts`).then(r => r.data),
+  getTrafficLogs: (id: string, range: string = '1d') =>
+    api.get<BandwidthPoint[]>(`/subscriptions/${id}/traffic`, { params: { range } }).then(r => r.data),
 }
 
 export const logAPI = {
@@ -164,6 +199,6 @@ export const logAPI = {
   getNodeStatuses: (timeRange: string = '1h', serverId?: string): Promise<NodeStatusResponse[]> => {
   const params = new URLSearchParams({ time_range: timeRange })
   if (serverId) params.append('server_id', serverId)
-  return api.get(`/logs/node-status?${params.toString()}`)
+  return api.get(`/logs/node-status?${params.toString()}`).then(r => r.data)
 },
 }

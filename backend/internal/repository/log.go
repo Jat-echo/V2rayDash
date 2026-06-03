@@ -106,26 +106,14 @@ func (r *LogRepository) ListNodeStatuses() ([]*model.NodeStatus, error) {
 }
 
 func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange string) ([]*model.NodeStatus, error) {
-	var interval string
-	switch timeRange {
-	case "1h":
-		interval = "1 hour"
-	case "4h":
-		interval = "4 hours"
-	case "12h":
-		interval = "12 hours"
-	case "24h":
-		interval = "24 hours"
-	default:
-		interval = "1 hour"
-	}
+	interval := timeRangeToInterval(timeRange, "1 hour")
 
 	query := `
 		SELECT id, server_id, cpu_percent, memory_percent, disk_percent,
 		       bandwidth_in, bandwidth_out, v2ray_status, reported_at
 		FROM node_status
 		WHERE reported_at > NOW() - $2::interval
-		AND ($1 = '' OR server_id = $1)
+		AND ($1 = '' OR server_id = $1::uuid)
 		ORDER BY reported_at ASC
 	`
 

@@ -91,8 +91,8 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Sync to remote server
-	server, err := h.serverRepo.GetByID(serverID)
+	// Sync to remote server (GetByIDForInstall includes ssh_key/ssh_password)
+	server, err := h.serverRepo.GetByIDForInstall(serverID)
 	if err == nil {
 		var auth ssh.SSHAuth
 		if server.SSHKeyType == "password" {
@@ -100,7 +100,6 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		} else {
 			auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
 		}
-		// Sync non-blocking
 		go h.accountSvc.SyncAllToRemote(serverID, auth)
 	}
 
@@ -142,8 +141,8 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Sync remaining accounts to remote server
-	server, err := h.serverRepo.GetByID(account.ServerID)
+	// Sync remaining accounts to remote server (GetByIDForInstall includes ssh_key/ssh_password)
+	server, err := h.serverRepo.GetByIDForInstall(account.ServerID)
 	if err == nil {
 		var auth ssh.SSHAuth
 		if server.SSHKeyType == "password" {
@@ -151,7 +150,6 @@ func (h *AccountHandler) Delete(c *gin.Context) {
 		} else {
 			auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
 		}
-		// Sync remaining accounts (non-blocking, ignore error)
 		go h.accountSvc.SyncAllToRemote(account.ServerID, auth)
 	}
 

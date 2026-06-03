@@ -1,11 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Layout } from 'antd'
-import { useState } from 'react'
+import { Layout, Spin, Dropdown, Avatar } from 'antd'
+import { useState, useEffect } from 'react'
+import { UserOutlined, LogoutOutlined } from '@ant-design/icons'
 import ServerList from './pages/servers'
 import SubscriptionList from './pages/subscriptions'
-import Monitor from './pages/monitor'
 import Logs from './pages/logs'
 import Settings from './pages/settings'
+import LoginPage from './pages/login'
+import SetupPage from './pages/setup'
+import { authAPI } from './services/api'
 
 const { Content } = Layout
 
@@ -22,12 +25,6 @@ const SubIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     <path d="M4 4h16v16H4z"/>
     <path d="M4 9h16M9 4v16"/>
-  </svg>
-)
-
-const MonitorIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M3 12h4l3-9 4 18 3-9h4"/>
   </svg>
 )
 
@@ -48,13 +45,71 @@ const SettingsIcon = () => (
 const navItems = [
   { path: '/servers', label: '服务器', icon: <ServerIcon /> },
   { path: '/subscriptions', label: '订阅', icon: <SubIcon /> },
-  { path: '/monitor', label: '监控', icon: <MonitorIcon /> },
   { path: '/logs', label: '日志', icon: <LogIcon /> },
   { path: '/settings', label: '设置', icon: <SettingsIcon /> },
 ]
 
+type AuthState = 'loading' | 'setup' | 'login' | 'ok'
+
 function App() {
   const [collapsed, setCollapsed] = useState(false)
+  const [authState, setAuthState] = useState<AuthState>('loading')
+  const [username, setUsername] = useState('')
+
+  useEffect(() => {
+    checkAuth()
+  }, [])
+
+  const checkAuth = async () => {
+    try {
+      const status = await authAPI.status()
+      if (status.setup_required) {
+        setAuthState('setup')
+        return
+      }
+      const token = localStorage.getItem('admin_token')
+      const storedUser = localStorage.getItem('admin_username')
+      if (!token) {
+        setAuthState('login')
+        return
+      }
+      // 验证 token 是否仍然有效
+      const res = await fetch('/api/servers', { headers: { Authorization: `Bearer ${token}` } })
+      if (res.status === 401) {
+        localStorage.removeItem('admin_token')
+        localStorage.removeItem('admin_username')
+        setAuthState('login')
+        return
+      }
+      setUsername(storedUser || '')
+      setAuthState('ok')
+    } catch {
+      setAuthState('login')
+    }
+  }
+
+  const handleLogin = (user: string) => {
+    setUsername(user)
+    setAuthState('ok')
+  }
+
+  const handleLogout = async () => {
+    try { await authAPI.logout() } catch {}
+    localStorage.removeItem('admin_token')
+    localStorage.removeItem('admin_username')
+    setAuthState('login')
+  }
+
+  if (authState === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
+
+  if (authState === 'setup') return <SetupPage onComplete={handleLogin} />
+  if (authState === 'login') return <LoginPage onLogin={handleLogin} />
 
   return (
     <BrowserRouter>
@@ -88,6 +143,26 @@ function App() {
               </NavLink>
             ))}
           </nav>
+          {/* 用户信息 + 退出 */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0,
+            padding: collapsed ? '12px 0' : '12px 16px',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+            display: 'flex', alignItems: 'center', gap: 10,
+            justifyContent: collapsed ? 'center' : 'space-between',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+              <Avatar size={32} icon={<UserOutlined />} style={{ background: '#c9a9a6', flexShrink: 0 }} />
+              {!collapsed && <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{username}</span>}
+            </div>
+            {!collapsed && (
+              <LogoutOutlined
+                onClick={handleLogout}
+                style={{ color: 'rgba(255,255,255,0.5)', cursor: 'pointer', fontSize: 16, flexShrink: 0 }}
+                title="退出登录"
+              />
+            )}
+          </div>
         </Layout.Sider>
 
         <Layout className="app-main" style={{ marginLeft: collapsed ? 72 : 240 }}>
@@ -96,7 +171,6 @@ function App() {
               <Route path="/" element={<Navigate to="/servers" replace />} />
               <Route path="/servers" element={<ServerList />} />
               <Route path="/subscriptions" element={<SubscriptionList />} />
-              <Route path="/monitor" element={<Monitor />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>

@@ -1276,14 +1276,11 @@ func (s *AccountService) GenerateSingBoxSubscription(accounts []*model.Account, 
 	return string(data), nil
 }
 
-// SyncAllToRemote 同步服务器所有账号到远程
+// SyncAllToRemote 同步服务器所有账号到远程 xray 配置文件，保留 Reality 等现有设置
 func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) error {
 	server, err := s.serverRepo.GetByID(serverID)
 	if err != nil {
 		return err
-	}
-	if server == nil {
-		return fmt.Errorf("server not found: %s", serverID)
 	}
 
 	accounts, err := s.accountRepo.ListByServerID(serverID)
@@ -1293,17 +1290,11 @@ func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) erro
 
 	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
 	if err != nil {
-		return err
+		return fmt.Errorf("ssh connect failed: %w", err)
 	}
 	defer client.Close()
 
-	sftpClient, err := ssh.NewSFTPClient(client)
-	if err != nil {
-		return err
-	}
-	defer sftpClient.Close()
-
-	// Build clients array from all accounts
+	// 构建启用账号的 clients 列表
 	clients := make([]map[string]interface{}, 0)
 	for _, acc := range accounts {
 		if acc.Enabled {
@@ -1314,35 +1305,111 @@ func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) erro
 		}
 	}
 
-	// Generate full config
-	config := map[string]interface{}{
-		"log": map[string]interface{}{
-			"loglevel": "warning",
-		},
-		"inbounds": []map[string]interface{}{
-			{
-				"port":     443,
-				"protocol": "vless",
-				"settings": map[string]interface{}{
-					"clients": clients,
-				},
-			},
-		},
+	// 按优先级尝试各配置文件路径
+	configPaths := []string{
+		"/etc/v2ray-agent/xray/conf/07_VLESS_vision_reality_inbounds.json",
+		"/etc/v2ray-agent/xray/conf/07_VLESS_reality_vision_inbounds.json",
+		"/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json",
 	}
 
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	synced := false
+	for _, configPath := range configPaths {
+		// 用 sudo 读取现有配置（SFTP 以普通用户运行，无法访问 /etc/v2ray-agent）
+		var out strings.Builder
+		if err := client.Execute("sudo cat "+configPath, &out, &out); err != nil {
+			continue
+		}
+		content := strings.TrimSpace(out.String())
+		if content == "" {
+			continue
+		}
+
+		// 解析现有配置
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(content), &config); err != nil {
+			continue
+		}
+
+		// 只更新 protocol=="vless" 的 inbound 的 clients，跳过 dokodemo-door 等其他类型
+		inbounds, ok := config["inbounds"].([]interface{})
+		if !ok || len(inbounds) == 0 {
+			continue
+		}
+		updatedAny := false
+		for idx, inboundRaw := range inbounds {
+			inbound, ok := inboundRaw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if proto, _ := inbound["protocol"].(string); proto != "vless" {
+				continue
+			}
+			// 判断是否启用了 Reality，Reality 协议需要 flow 字段
+			hasReality := false
+			if ss, ok := inbound["streamSettings"].(map[string]interface{}); ok {
+				if sec, _ := ss["security"].(string); sec == "reality" {
+					hasReality = true
+				}
+			}
+			// 构造带 flow 的 clients（Reality Vision 必须）
+			vlessClients := make([]map[string]interface{}, 0, len(clients))
+			for _, c := range clients {
+				entry := map[string]interface{}{
+					"id":    c["id"],
+					"email": c["email"],
+				}
+				if hasReality {
+					entry["flow"] = "xtls-rprx-vision"
+				}
+				vlessClients = append(vlessClients, entry)
+			}
+			settings, ok := inbound["settings"].(map[string]interface{})
+			if !ok {
+				settings = map[string]interface{}{}
+				inbound["settings"] = settings
+			}
+			settings["clients"] = vlessClients
+			inbounds[idx] = inbound
+			updatedAny = true
+		}
+		if !updatedAny {
+			continue
+		}
+		config["inbounds"] = inbounds
+
+		// 序列化修改后的配置
+		updated, err := json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal config failed: %w", err)
+		}
+
+		// 写到本地临时文件，再上传到远程 /tmp（普通用户可写）
+		localTmp := "/tmp/v2ray_sync_" + serverID + ".json"
+		if err := os.WriteFile(localTmp, updated, 0644); err != nil {
+			return fmt.Errorf("write temp file failed: %w", err)
+		}
+		defer os.Remove(localTmp)
+
+		remoteTmp := "/tmp/v2ray_sync_" + serverID + ".json"
+		if err := client.UploadFileExec(localTmp, remoteTmp); err != nil {
+			return fmt.Errorf("upload config failed: %w", err)
+		}
+
+		// sudo cp 到实际配置路径，再重启 xray
+		var execOut strings.Builder
+		cmd := fmt.Sprintf("sudo cp %s %s && sudo systemctl restart xray", remoteTmp, configPath)
+		if err := client.Execute(cmd, &execOut, &execOut); err != nil {
+			return fmt.Errorf("apply config failed: %w", err)
+		}
+
+		synced = true
+		break
 	}
 
-	tmpFile := "/tmp/v2ray_config_" + serverID + ".json"
-	err = os.WriteFile(tmpFile, data, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to write temp config: %w", err)
+	if !synced {
+		return fmt.Errorf("no xray config found on remote server")
 	}
-	defer os.Remove(tmpFile)
-
-	return sftpClient.UploadFile(tmpFile, "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json")
+	return nil
 }
 
 // SyncToRemote 同步单个账号到远程服务器
@@ -1440,13 +1507,6 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 	var serverName string
 	var publicKeyFound bool
 
-	// 获取现有账号列表（只查一次，避免N+1）
-	existingAccounts, _ := s.accountRepo.ListByServerID(serverID)
-	existingByUUID := make(map[string]*model.Account)
-	for _, acc := range existingAccounts {
-		existingByUUID[acc.UUID] = acc
-	}
-
 	for _, configPath := range configPaths {
 		content, err := client.ReadRemoteFile(configPath)
 		if err != nil {
@@ -1469,7 +1529,7 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 					Security   string   `json:"security"`
 					RealitySettings struct {
 						PublicKey   string   `json:"publicKey"`
-						ServerNames []string `json:"serverNames"` // array, not string
+						ServerNames []string `json:"serverNames"`
 						Target      string   `json:"target"`
 					} `json:"realitySettings"`
 				} `json:"streamSettings"`
@@ -1481,28 +1541,23 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 		}
 
 		for _, inbound := range config.Inbounds {
-			// 记录端口（取第一个有效的）
 			if parsedPort == 0 && inbound.Port > 0 {
 				parsedPort = inbound.Port
 			}
-			// 记录 Reality publicKey 和 serverName
 			rsPK := inbound.StreamSettings.RealitySettings.PublicKey
 			rsTarget := inbound.StreamSettings.RealitySettings.Target
 			ssSN := inbound.StreamSettings.ServerName
-			// rsSN is now []string, get first element
 			var rsSNStr string
 			if len(inbound.StreamSettings.RealitySettings.ServerNames) > 0 {
 				rsSNStr = inbound.StreamSettings.RealitySettings.ServerNames[0]
 			}
 			if rsPK != "" && !publicKeyFound {
 				publicKey = rsPK
-				// 优先从 realitySettings.serverNames 获取，其次从 streamSettings.serverName 获取，最后用 target
 				if rsSNStr != "" {
 					serverName = rsSNStr
 				} else if ssSN != "" {
 					serverName = ssSN
 				} else if rsTarget != "" {
-					// 从 target 提取 host:port 格式中的 host
 					if idx := strings.Index(rsTarget, ":"); idx > 0 {
 						serverName = rsTarget[:idx]
 					} else {
@@ -1513,34 +1568,16 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 				}
 				publicKeyFound = true
 			}
-			for _, client := range inbound.Settings.Clients {
+			for _, cli := range inbound.Settings.Clients {
 				protocol := "vless_tcp"
-				// 如果有 Reality 设置，则为 Reality 协议
 				if rsPK != "" {
 					protocol = "vless_reality_vision"
 				}
-				// 检查账号是否已存在（使用预加载的map）
-				existingAccount := existingByUUID[client.ID]
-
-				if existingAccount != nil {
-					// 账号已存在，更新信息
-					updateReq := &model.UpdateAccountRequest{
-						Email:     &client.Email,
-						Protocols: []string{protocol},
-					}
-					s.accountRepo.Update(existingAccount.ID, updateReq)
-					// 获取更新后的账号
-					updatedAccount, _ := s.accountRepo.GetByID(existingAccount.ID)
-					if updatedAccount != nil {
-						accounts = append(accounts, updatedAccount)
-					}
-					continue
-				}
-
-				account, err := s.accountRepo.Create(&model.CreateAccountRequest{
+				// 使用 upsert：UUID 存在则更新，否则插入，不会因重复 UUID 报错
+				account, err := s.accountRepo.Upsert(&model.CreateAccountRequest{
 					ServerID:  serverID,
-					UUID:      client.ID,
-					Email:     client.Email,
+					UUID:      cli.ID,
+					Email:     cli.Email,
 					Protocols: []string{protocol},
 				})
 				if err != nil {

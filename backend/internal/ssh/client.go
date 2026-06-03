@@ -1,9 +1,12 @@
 package ssh
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -141,8 +144,9 @@ func (c *SSHClient) ExecuteStreaming(cmd string, stdout io.Writer, stderr io.Wri
 }
 
 // ExecuteStreamingWithFlush is like ExecuteStreaming but calls Flush after each write.
-// This is useful for SSE streaming responses.
-func (c *SSHClient) ExecuteStreamingWithFlush(cmd string, w io.Writer, flusher http.Flusher) (<-chan struct{}, error) {
+// This is useful for SSE streaming responses. The returned channel sends the command's
+// exit error (nil on success) when execution completes.
+func (c *SSHClient) ExecuteStreamingWithFlush(cmd string, w io.Writer, flusher http.Flusher) (<-chan error, error) {
 	session, err := c.client.NewSession()
 	if err != nil {
 		return nil, err
@@ -159,7 +163,7 @@ func (c *SSHClient) ExecuteStreamingWithFlush(cmd string, w io.Writer, flusher h
 		return nil, err
 	}
 
-	done := make(chan struct{})
+	done := make(chan error, 1)
 
 	if err := session.Start(cmd); err != nil {
 		session.Close()
@@ -200,20 +204,23 @@ func (c *SSHClient) ExecuteStreamingWithFlush(cmd string, w io.Writer, flusher h
 	}()
 
 	go func() {
-		session.Wait()
+		err := session.Wait()
 		session.Close()
-		close(done)
+		done <- err
 	}()
 
 	return done, nil
 }
 
 type flushingWriter struct {
+	mu      sync.Mutex
 	w       io.Writer
 	flusher http.Flusher
 }
 
 func (fw *flushingWriter) Write(p []byte) (int, error) {
+	fw.mu.Lock()
+	defer fw.mu.Unlock()
 	return fw.w.Write(p)
 }
 
@@ -237,6 +244,32 @@ func (c *SSHClient) ReadRemoteFile(path string) (string, error) {
 	}
 
 	return string(content), nil
+}
+
+// UploadFileExec uploads a file by executing sftp command via SSH exec (more compatible than SFTP subsystem)
+func (c *SSHClient) UploadFileExec(localPath, remotePath string) error {
+	// Read local file content
+	file, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("failed to open local file: %w", err)
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return fmt.Errorf("failed to read local file: %w", err)
+	}
+
+	// Use base64 encoding to safely transfer binary content
+	encoded := base64.StdEncoding.EncodeToString(content)
+
+	// Execute shell command to decode and write file
+	cmd := fmt.Sprintf("echo '%s' | base64 -d > %s && chmod +x %s", encoded, remotePath, remotePath)
+	err = c.Execute(cmd, io.Discard, io.Discard)
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+	return nil
 }
 
 // Close closes the SSH client connection

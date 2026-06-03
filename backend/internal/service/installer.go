@@ -21,10 +21,13 @@ type InstallResult struct {
 }
 
 type InstallConfig struct {
-	Core       string // "xray-core" or "sing-box"
-	UUID       string
-	ServerName string // Reality SNI
-	Protocols  []string
+	Core            string // "xray-core" or "sing-box"
+	UUID            string
+	ServerName      string // Reality SNI
+	Protocols       []string
+	ServerID        string // 服务器ID，用于Agent
+	ControlCenterURL string // 控制中心URL
+	InstallAgent    bool   // 是否安装Agent
 }
 
 type Installer struct {
@@ -49,6 +52,22 @@ func NewInstaller(serverID, host string, port int, user string, auth ssh.SSHAuth
 	}
 }
 
+var (
+	uuidRE       = regexp.MustCompile(`^[a-fA-F0-9\-]{8,64}$`)
+	serverNameRE = regexp.MustCompile(`^[a-zA-Z0-9.\-]{1,253}$`)
+	ansiCSIRe    = regexp.MustCompile(`\x1B\[[0-9;]*[a-zA-Z]`)
+)
+
+func validateInstallConfig(config *InstallConfig) *InstallResult {
+	if config.UUID != "" && !uuidRE.MatchString(config.UUID) {
+		return &InstallResult{Success: false, Error: "无效的 UUID 格式"}
+	}
+	if config.ServerName != "" && !serverNameRE.MatchString(config.ServerName) {
+		return &InstallResult{Success: false, Error: "无效的 ServerName 格式"}
+	}
+	return nil
+}
+
 func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallResult {
 	// 1. 连接 SSH
 	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.host, i.port)
@@ -61,21 +80,16 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 
 	// 2. 上传脚本
 	fmt.Fprintf(output, "[%s] 正在上传安装脚本...\n", time.Now().Format("15:04:05"))
-	sftpClient, err := ssh.NewSFTPClient(sshClient)
-	if err != nil {
-		return &InstallResult{Success: false, Error: fmt.Sprintf("SFTP连接失败: %v", err)}
-	}
-	defer func() {
-		if sftpClient != nil {
-			sftpClient.Close()
-		}
-	}()
-
 	remotePath := "/tmp/v2ray_install.sh"
-	if err := sftpClient.UploadFile(i.scriptPath, remotePath); err != nil {
+	// Use exec-based SFTP via ssh command for better compatibility
+	if err := sshClient.UploadFileExec(i.scriptPath, remotePath); err != nil {
 		return &InstallResult{Success: false, Error: fmt.Sprintf("上传脚本失败: %v", err)}
 	}
 	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
+
+	if result := validateInstallConfig(config); result != nil {
+		return result
+	}
 
 	// 3. 构建安装命令参数
 	var args []string
@@ -107,8 +121,16 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 	fmt.Fprintf(output, "[%s] 正在执行安装脚本...\n", time.Now().Format("15:04:05"))
 	fmt.Fprintf(output, "[%s] 参数: %s\n", time.Now().Format("15:04:05"), strings.Join(args, " "))
 
-	// 使用 script 命令创建一个伪终端，这样脚本中的 read 命令就能正常工作
-	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"3\\n1\\n\" | bash %s %s' /dev/null", remotePath, remotePath, strings.Join(args, " "))
+	// 根据核心类型选择菜单项
+	// 主菜单: 3 = 一键无域名Reality
+	// 子菜单: 1 = Xray-core, 2 = sing-box
+	var menuSelect string
+	if config.Core == "sing-box" {
+		menuSelect = "3\n2\n"
+	} else {
+		menuSelect = "3\n1\n"
+	}
+	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"%s\" | sudo -n bash %s %s' /dev/null", remotePath, menuSelect, remotePath, strings.Join(args, " "))
 
 	// 捕获安装输出以便后续解析 publicKey 和端口
 	var installOutput strings.Builder
@@ -168,31 +190,15 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 	}
 }
 
-// InstallStreaming 执行安装并实时流式输出到 HTTP 响应
 func cleanANSICodes(s string) string {
-	// 移除 ANSI 颜色转义序列
-	s = strings.ReplaceAll(s, "\x1B[0m", "")
-	s = strings.ReplaceAll(s, "\x1B[1;36m", "")
-	s = strings.ReplaceAll(s, "\x1B[32m", "")
-	s = strings.ReplaceAll(s, "\x1B[33m", "")
-	s = strings.ReplaceAll(s, "\x1B[31m", "")
-	s = strings.ReplaceAll(s, "\x1B[1;31m", "")
-	s = strings.ReplaceAll(s, "\x1B[1;32m", "")
-	s = strings.ReplaceAll(s, "\x1B[1;33m", "")
-	s = strings.ReplaceAll(s, "\x1B[1;36m", "")
-	s = strings.ReplaceAll(s, "\x1B[36m", "")
-	s = strings.ReplaceAll(s, "\x1B[34m", "")
-	s = strings.ReplaceAll(s, "\x1B[35m", "")
-	s = strings.ReplaceAll(s, "\x1B[1m", "")
-	s = strings.ReplaceAll(s, "\x1B[0m", "")
-	// 清理常见的残留字符
-	s = strings.TrimSpace(s)
-	return s
+	return strings.TrimSpace(ansiCSIRe.ReplaceAllString(s, ""))
 }
 
 // InstallStreaming 执行安装并实时流式输出到 HTTP 响应
-func (i *Installer) InstallStreaming(flusher http.Flusher, config *InstallConfig) *InstallResult {
-	output := &streamingWriter{flusher: flusher}
+
+// InstallStreaming 执行安装并实时流式输出到 HTTP 响应
+func (i *Installer) InstallStreaming(w io.Writer, flusher http.Flusher, config *InstallConfig) *InstallResult {
+	output := &streamingWriter{w: w, flusher: flusher}
 
 	// 1. 连接 SSH
 	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.host, i.port)
@@ -224,6 +230,10 @@ func (i *Installer) InstallStreaming(flusher http.Flusher, config *InstallConfig
 	}
 	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
 
+	if result := validateInstallConfig(config); result != nil {
+		return result
+	}
+
 	// 3. 构建安装命令参数
 	var args []string
 	if config.Core == "sing-box" {
@@ -241,18 +251,36 @@ func (i *Installer) InstallStreaming(flusher http.Flusher, config *InstallConfig
 		args = append(args, fmt.Sprintf("--server-name %s", config.ServerName))
 	}
 
+	// 如果需要安装Agent，添加Agent相关参数
+	if config.InstallAgent && config.ServerID != "" && config.ControlCenterURL != "" {
+		args = append(args, "--agent", "--url", config.ControlCenterURL, "--id", config.ServerID, "--psk", "auto")
+	}
+
 	// 4. 执行安装
 	fmt.Fprintf(output, "[%s] 正在执行安装脚本...\n", time.Now().Format("15:04:05"))
 	fmt.Fprintf(output, "[%s] 参数: %s\n", time.Now().Format("15:04:05"), strings.Join(args, " "))
 
-	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"3\\n1\\n\" | bash %s %s' /dev/null", remotePath, remotePath, strings.Join(args, " "))
+	// 根据核心类型选择菜单项
+	// 主菜单: 3 = 一键无域名Reality
+	// 子菜单: 1 = Xray-core, 2 = sing-box
+	var menuSelect string
+	if config.Core == "sing-box" {
+		menuSelect = "3\n2\n"
+	} else {
+		menuSelect = "3\n1\n"
+	}
+	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"%s\" | sudo -n bash %s %s' /dev/null", remotePath, menuSelect, remotePath, strings.Join(args, " "))
 
 	done, err := sshClient.ExecuteStreamingWithFlush(cmd, output, flusher)
 	if err != nil {
 		fmt.Fprintf(output, "[ERROR] 启动安装命令失败: %v\n", err)
 		return &InstallResult{Success: false, Error: fmt.Sprintf("安装执行失败: %v", err)}
 	}
-	<-done
+	cmdErr := <-done
+	if cmdErr != nil {
+		fmt.Fprintf(output, "[ERROR] 安装脚本退出异常: %v\n", cmdErr)
+		return &InstallResult{Success: false, Error: fmt.Sprintf("安装脚本执行失败: %v", cmdErr)}
+	}
 
 	cleanedOutput := cleanANSICodes(output.String())
 
@@ -296,19 +324,21 @@ func (i *Installer) InstallStreaming(flusher http.Flusher, config *InstallConfig
 
 type streamingWriter struct {
 	buffer  strings.Builder
+	w       io.Writer
 	flusher http.Flusher
 }
 
-func (w *streamingWriter) Write(p []byte) (int, error) {
-	n, err := w.buffer.Write(p)
-	if w.flusher != nil {
-		w.flusher.Flush()
+func (sw *streamingWriter) Write(p []byte) (int, error) {
+	sw.buffer.Write(p)
+	n, err := sw.w.Write(p)
+	if sw.flusher != nil {
+		sw.flusher.Flush()
 	}
 	return n, err
 }
 
-func (w *streamingWriter) String() string {
-	return w.buffer.String()
+func (sw *streamingWriter) String() string {
+	return sw.buffer.String()
 }
 
 // fetchRealityConfig 从远程服务器获取 Reality 配置

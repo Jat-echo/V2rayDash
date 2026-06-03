@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
@@ -12,10 +13,11 @@ import (
 )
 
 type InstallHandler struct {
-	scriptPath  string
-	serverRepo  *repository.ServerRepository
-	accountRepo *repository.AccountRepository
-	accountSvc  *service.AccountService
+	scriptPath   string
+	serverRepo   *repository.ServerRepository
+	accountRepo  *repository.AccountRepository
+	accountSvc   *service.AccountService
+	settingRepo  *repository.SettingRepository
 }
 
 type InstallRequest struct {
@@ -25,7 +27,7 @@ type InstallRequest struct {
 	Protocols  []string `json:"protocols"`
 }
 
-func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepository, accountRepo *repository.AccountRepository) *InstallHandler {
+func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepository, accountRepo *repository.AccountRepository, settingRepo *repository.SettingRepository) *InstallHandler {
 	return &InstallHandler{
 		scriptPath:  scriptPath,
 		serverRepo:  serverRepo,
@@ -34,6 +36,7 @@ func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepositor
 			accountRepo,
 			serverRepo,
 		),
+		settingRepo: settingRepo,
 	}
 }
 
@@ -83,18 +86,31 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	}
 
 	// Create install config
+	// 获取控制中心URL
+	controlCenterURL := "http://112.125.93.190:8080"
+	if setting, err := h.settingRepo.Get("public_url"); err == nil && setting != nil && setting.Value != "" {
+		controlCenterURL = setting.Value
+	}
+	// 确保URL格式正确
+	if _, err := url.Parse(controlCenterURL); err != nil {
+		controlCenterURL = "http://112.125.93.190:8080"
+	}
+
 	installConfig := &service.InstallConfig{
-		Core:       req.Core,
-		UUID:       req.UUID,
-		ServerName: req.ServerName,
-		Protocols:  req.Protocols,
+		Core:             req.Core,
+		UUID:             req.UUID,
+		ServerName:       req.ServerName,
+		Protocols:        req.Protocols,
+		ServerID:         serverID,
+		ControlCenterURL: controlCenterURL,
+		InstallAgent:     true,
 	}
 
 	// Create installer
 	installer := service.NewInstaller(serverID, server.IP, server.SSHPort, server.SSHUser, auth, h.scriptPath)
 
 	// Execute installation with streaming output
-	result := installer.InstallStreaming(flusher, installConfig)
+	result := installer.InstallStreaming(c.Writer, flusher, installConfig)
 
 	if !result.Success {
 		fmt.Fprintf(c.Writer, "\n[ERROR] %s\n", result.Error)

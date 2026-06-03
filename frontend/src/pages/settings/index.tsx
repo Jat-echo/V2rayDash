@@ -1,418 +1,321 @@
-import { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, message, Typography, Space, Tooltip } from 'antd'
-import { InfoCircleOutlined, GlobalOutlined, SaveOutlined, AimOutlined } from '@ant-design/icons'
+import { useState, useEffect, useCallback } from 'react'
+import { Card, Form, Input, Button, message } from 'antd'
+import { AimOutlined, SaveOutlined, ReloadOutlined, LockOutlined } from '@ant-design/icons'
+import { authAPI } from '../../services/api'
 
-const { Title, Text } = Typography
-
-interface PublicURLSetting {
-  value: string
+interface SystemStatus {
+  cpu_percent: number
+  mem_percent: number
+  mem_used_mb: number
+  mem_total_mb: number
+  disk_percent: number
+  disk_used_gb: number
+  disk_total_gb: number
 }
 
-export default function Settings() {
-  const [loading, setLoading] = useState(false)
-  const [fetchingIP, setFetchingIP] = useState(false)
-  const [form] = Form.useForm()
-  const [hasChanges, setHasChanges] = useState(false)
+// 所有 fetch 都带上 auth token（设置页的接口受认证保护）
+function authedFetch(url: string, opts?: RequestInit) {
+  const token = localStorage.getItem('admin_token') || ''
+  return fetch(url, {
+    ...opts,
+    headers: { Authorization: `Bearer ${token}`, ...opts?.headers },
+  })
+}
 
-  useEffect(() => {
-    loadSettings()
+// ── 环形指标卡 ────────────────────────────────────────────────────────────────
+function MetricRing({
+  label, value, sub, color,
+}: { label: string; value: number; sub?: string; color: string }) {
+  const R = 40
+  const C = 2 * Math.PI * R   // 251.3
+  const ARC = C * 0.75         // 188.5  (270°)
+  const pct = Math.min(value / 100, 1)
+  const filled = pct * ARC
+  // 根据负载调整颜色
+  const fill = pct > 0.85 ? 'var(--morandi-terracotta)'
+              : pct > 0.68 ? 'var(--morandi-sand)'
+              : color
+
+  return (
+    <div className="st-ring-card">
+      <svg width="104" height="104" viewBox="0 0 104 104">
+        {/* 轨道 */}
+        <circle cx="52" cy="52" r={R} fill="none"
+          stroke="rgba(60,55,48,0.10)" strokeWidth="6" strokeLinecap="round"
+          strokeDasharray={`${ARC} ${C - ARC}`}
+          transform="rotate(135 52 52)"
+        />
+        {/* 值 */}
+        <circle cx="52" cy="52" r={R} fill="none"
+          stroke={fill} strokeWidth="6" strokeLinecap="round"
+          strokeDasharray={`${filled} ${C - filled}`}
+          transform="rotate(135 52 52)"
+          style={{ transition: 'stroke-dasharray 1s cubic-bezier(.4,0,.2,1), stroke .4s' }}
+        />
+        {/* 数值文字 */}
+        <text x="52" y="48" textAnchor="middle"
+          fill="var(--text-primary)" fontSize="16" fontWeight="600">
+          {value.toFixed(1)}
+        </text>
+        <text x="52" y="62" textAnchor="middle"
+          fill="var(--text-muted)" fontSize="10">
+          %
+        </text>
+      </svg>
+      <p className="st-ring-label">{label}</p>
+      {sub && <p className="st-ring-sub">{sub}</p>}
+    </div>
+  )
+}
+
+// ── 主组件 ─────────────────────────────────────────────────────────────────────
+export default function Settings() {
+  const [urlForm] = Form.useForm()
+  const [pwdForm] = Form.useForm()
+  const [saving, setSaving] = useState(false)
+  const [fetchingIP, setFetchingIP] = useState(false)
+  const [modified, setModified] = useState(false)
+  const [pwdSaving, setPwdSaving] = useState(false)
+  const [sys, setSys] = useState<SystemStatus | null>(null)
+  const [sysLoading, setSysLoading] = useState(false)
+
+  const fetchSys = useCallback(async () => {
+    setSysLoading(true)
+    try {
+      const r = await authedFetch('/api/settings/system-status')
+      if (r.ok) setSys(await r.json())
+    } catch {}
+    finally { setSysLoading(false) }
   }, [])
 
-  const loadSettings = async () => {
-    try {
-      const res = await fetch('/api/settings/public-url')
-      const data: PublicURLSetting = await res.json()
-      const url = data.value || 'http://localhost:8080'
-      form.setFieldsValue({ public_url: url })
-    } catch (e) {
-      console.error('Failed to load settings', e)
-      form.setFieldsValue({ public_url: 'http://localhost:8080' })
-    }
-  }
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const r = await authedFetch('/api/settings/public-url')
+        const d = await r.json()
+        urlForm.setFieldsValue({ public_url: d.value || 'http://localhost:8080' })
+      } catch {}
+    })()
+    fetchSys()
+    const t = setInterval(fetchSys, 10000)
+    return () => clearInterval(t)
+  }, [fetchSys, urlForm])
 
-  const getPublicIP = async () => {
+  const handleGetIP = async () => {
     setFetchingIP(true)
     try {
-      const res = await fetch('/api/settings/public-ip')
-      const data = await res.json()
-      if (data.ip) {
-        form.setFieldsValue({ public_url: `http://${data.ip}:8080` })
-        setHasChanges(true)
-        message.success({
-          content: (
-            <span>
-              检测到公网IP: <strong>{data.ip}</strong>
-            </span>
-          ),
-        })
-      } else {
-        message.error('获取公网IP失败，请检查网络连接')
-      }
-    } catch (e) {
-      message.error('获取公网IP失败')
-    } finally {
-      setFetchingIP(false)
-    }
+      const r = await authedFetch('/api/settings/public-ip')
+      const d = await r.json()
+      if (d.ip) {
+        urlForm.setFieldsValue({ public_url: `http://${d.ip}:8080` })
+        setModified(true)
+        message.success(`检测到公网 IP：${d.ip}`)
+      } else message.error('获取公网IP失败')
+    } catch { message.error('网络错误') }
+    finally { setFetchingIP(false) }
   }
 
-  const handleSave = async (values: { public_url: string }) => {
-    setLoading(true)
+  const handleSaveUrl = async (v: { public_url: string }) => {
+    setSaving(true)
     try {
-      const res = await fetch('/api/settings/public-url', {
+      const r = await authedFetch('/api/settings/public-url', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: values.public_url }),
+        body: JSON.stringify({ value: v.public_url }),
       })
-      if (res.ok) {
-        message.success({
-          content: (
-            <span>
-              保存成功，当前控制中心地址: <strong>{values.public_url}</strong>
-            </span>
-          ),
-        })
-        setHasChanges(false)
-      } else {
-        message.error('保存失败')
-      }
-    } catch (e) {
-      message.error('保存失败')
-    } finally {
-      setLoading(false)
-    }
+      if (r.ok) { message.success('已保存'); setModified(false) }
+      else message.error('保存失败')
+    } catch { message.error('网络错误') }
+    finally { setSaving(false) }
   }
 
-  const handleValuesChange = () => {
-    setHasChanges(true)
+  const handleChangePwd = async (v: { old: string; next: string; confirm: string }) => {
+    if (v.next !== v.confirm) { message.error('两次密码不一致'); return }
+    if (v.next.length < 6) { message.error('新密码至少6位'); return }
+    setPwdSaving(true)
+    try {
+      await authAPI.changePassword(v.old, v.next)
+      message.success('密码已修改，即将退出登录')
+      pwdForm.resetFields()
+      setTimeout(() => { localStorage.removeItem('admin_token'); window.location.reload() }, 1500)
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || '修改失败')
+    } finally { setPwdSaving(false) }
   }
+
+  const memSub = sys
+    ? `${sys.mem_used_mb >= 1024 ? (sys.mem_used_mb / 1024).toFixed(1) + ' GB' : sys.mem_used_mb + ' MB'} / ${sys.mem_total_mb >= 1024 ? (sys.mem_total_mb / 1024).toFixed(1) + ' GB' : sys.mem_total_mb + ' MB'}`
+    : ''
+  const diskSub = sys ? `${sys.disk_used_gb.toFixed(1)} GB / ${sys.disk_total_gb.toFixed(1)} GB` : ''
 
   return (
     <div className="animate-in">
-      {/* Page Header */}
-      <div className="page-header" style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div className="settings-icon">
-            <GlobalOutlined />
-          </div>
-          <div>
-            <h1 style={{ fontSize: 26, fontWeight: 600, marginBottom: 4 }}>系统设置</h1>
-            <Text type="secondary" style={{ fontSize: 14 }}>
-              配置控制中心的访问地址和基本参数
-            </Text>
-          </div>
-        </div>
+      {/* 页头：与其他页面统一 */}
+      <div className="page-header">
+        <h1>系统设置</h1>
+        <p>配置控制中心访问地址、查看服务器资源状态</p>
       </div>
 
-      {/* Main Settings Card */}
-      <Card
-        className="morandi-card settings-main-card"
-        style={{
-          maxWidth: 680,
-          borderRadius: 16,
-          overflow: 'hidden',
-        }}
-      >
-        {/* Card Header */}
-        <div className="settings-card-header">
-          <div className="header-content">
-            <Title level={5} style={{ margin: 0, color: '#fff' }}>
-              控制中心访问地址
-            </Title>
-            <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13 }}>
-              代理节点通过此地址访问控制中心
-            </Text>
-          </div>
-          <div className="header-decoration">
-            <svg width="120" height="80" viewBox="0 0 120 80" fill="none">
-              <circle cx="100" cy="40" r="60" fill="rgba(255,255,255,0.05)" />
-              <circle cx="80" cy="30" r="40" fill="rgba(255,255,255,0.03)" />
-            </svg>
-          </div>
-        </div>
-
-        {/* Card Body */}
-        <div className="settings-card-body">
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleSave}
-            onValuesChange={handleValuesChange}
-            requiredMark={false}
+      {/* ── 访问地址 ── */}
+      <Card className="morandi-card" style={{ maxWidth: 680, marginBottom: 20 }}>
+        <p className="st-section-title">控制中心访问地址</p>
+        <p className="st-section-desc">代理节点通过此地址进行心跳上报和配置同步</p>
+        <Form
+          form={urlForm}
+          layout="vertical"
+          onFinish={handleSaveUrl}
+          onValuesChange={() => setModified(true)}
+          style={{ marginTop: 20 }}
+        >
+          <Form.Item
+            name="public_url"
+            label="公网地址"
+            rules={[
+              { required: true, message: '请输入地址' },
+              { pattern: /^https?:\/\/.+/, message: '须以 http:// 或 https:// 开头' },
+            ]}
           >
-            <Form.Item
-              name="public_url"
-              label={
-                <Space>
-                  <span>公网访问地址</span>
-                  <Tooltip title="代理节点通过此地址访问控制中心进行心跳报告和配置同步">
-                    <InfoCircleOutlined style={{ color: '#9e9a93' }} />
-                  </Tooltip>
-                </Space>
-              }
-              rules={[
-                { required: true, message: '请输入控制中心地址' },
-                {
-                  pattern: /^https?:\/\/.+/,
-                  message: '地址必须以 http:// 或 https:// 开头',
-                },
-              ]}
-              style={{ marginBottom: 24 }}
+            <Input
+              size="large"
+              placeholder="http://公网IP:8080 或 https://域名"
+              suffix={modified ? <span style={{ color: 'var(--morandi-dusty-rose)', fontSize: 12 }}>已修改</span> : null}
+            />
+          </Form.Item>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+            支持 <code style={{ background: 'var(--bg-secondary)', padding: '1px 5px', borderRadius: 4 }}>http://IP:PORT</code> 或 <code style={{ background: 'var(--bg-secondary)', padding: '1px 5px', borderRadius: 4 }}>https://域名</code>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <Button icon={<AimOutlined />} onClick={handleGetIP} loading={fetchingIP}>
+              一键获取公网 IP
+            </Button>
+            <Button
+              type="primary" htmlType="submit"
+              icon={<SaveOutlined />} loading={saving}
+              disabled={!modified}
             >
-              <Input
-                size="large"
-                placeholder="http://公网IP:端口 或 https://域名"
-                suffix={
-                  hasChanges && (
-                    <span style={{ color: '#c9a9a6', fontSize: 12 }}>已修改</span>
-                  )
-                }
-                style={{
-                  borderRadius: 10,
-                  height: 48,
-                  fontSize: 15,
-                }}
-              />
-            </Form.Item>
-
-            {/* Helper Text */}
-            <div className="url-helper">
-              <InfoCircleOutlined style={{ marginRight: 8, color: '#9e9a93' }} />
-              <Text type="secondary" style={{ fontSize: 13 }}>
-                格式支持: <code>http://IP:端口</code> 或 <code>https://域名</code>
-              </Text>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="settings-actions">
-              <Button
-                size="large"
-                icon={<AimOutlined />}
-                onClick={getPublicIP}
-                loading={fetchingIP}
-                style={{
-                  borderRadius: 10,
-                  height: 48,
-                  paddingLeft: 24,
-                  paddingRight: 24,
-                }}
-              >
-                一键获取公网IP
-              </Button>
-
-              <Button
-                type="primary"
-                size="large"
-                htmlType="submit"
-                icon={<SaveOutlined />}
-                loading={loading}
-                disabled={!hasChanges}
-                style={{
-                  borderRadius: 10,
-                  height: 48,
-                  paddingLeft: 28,
-                  paddingRight: 28,
-                }}
-              >
-                保存设置
-              </Button>
-            </div>
-          </Form>
-        </div>
+              保存配置
+            </Button>
+          </div>
+        </Form>
       </Card>
 
-      {/* Info Cards Row */}
-      <div className="settings-info-row" style={{ display: 'flex', gap: 20, marginTop: 24 }}>
-        {/* Agent Info Card */}
-        <Card
-          className="morandi-card info-card"
-          style={{
-            flex: 1,
-            maxWidth: 320,
-            borderRadius: 12,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-            <div className="info-icon" style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              background: 'linear-gradient(135deg, #B4A7C7 0%, #9A8BB4 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontSize: 18,
-            }}>
-              📡
-            </div>
-            <div>
-              <Title level={5} style={{ fontSize: 14, marginBottom: 6 }}>
-                Agent 配置
-              </Title>
-              <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.6 }}>
-                安装代理后，节点会从此地址获取控制中心配置并进行心跳上报
-              </Text>
-            </div>
-          </div>
-        </Card>
-
-        {/* Subscription Info Card */}
-        <Card
-          className="morandi-card info-card"
-          style={{
-            flex: 1,
-            maxWidth: 320,
-            borderRadius: 12,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-            <div className="info-icon" style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              background: 'linear-gradient(135deg, #9DB4C0 0%, #7A9AAE 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              fontSize: 18,
-            }}>
-              🔗
-            </div>
-            <div>
-              <Title level={5} style={{ fontSize: 14, marginBottom: 6 }}>
-                订阅地址
-              </Title>
-              <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.6 }}>
-                客户端通过此地址获取订阅内容，支持 Clash Meta / VLESS 格式
-              </Text>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Current Status */}
+      {/* ── 服务器资源 ── */}
       <Card
         className="morandi-card"
-        style={{
-          marginTop: 20,
-          maxWidth: 680,
-          borderRadius: 12,
-          background: 'linear-gradient(135deg, #F5F0E8 0%, #F0EDE8 100%)',
-        }}
+        style={{ maxWidth: 680, marginBottom: 20 }}
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>控制中心服务器资源</span>
+            <Button
+              type="text" size="small"
+              icon={<ReloadOutlined spin={sysLoading} />}
+              onClick={fetchSys}
+            />
+          </div>
+        }
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            background: 'rgba(168, 181, 160, 0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A8B5A0" strokeWidth="2">
-              <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
-              <polyline points="22,4 12,14.01 9,11.01" />
-            </svg>
+        {sys ? (
+          <div className="st-rings">
+            <MetricRing
+              label="CPU 使用率"
+              value={sys.cpu_percent}
+              color="var(--morandi-dusty-rose)"
+            />
+            <div className="st-ring-divider" />
+            <MetricRing
+              label="内存使用率"
+              value={sys.mem_percent}
+              sub={memSub}
+              color="var(--morandi-sky)"
+            />
+            <div className="st-ring-divider" />
+            <MetricRing
+              label="磁盘使用率"
+              value={sys.disk_percent}
+              sub={diskSub}
+              color="var(--morandi-sage)"
+            />
           </div>
-          <div>
-            <Text strong style={{ fontSize: 14, display: 'block', marginBottom: 4 }}>
-              当前配置状态
-            </Text>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              控制中心已正确配置，代理节点可以正常连接
-            </Text>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 14 }}>
+            {sysLoading ? '加载中…' : '暂无数据，请刷新重试'}
           </div>
-        </div>
+        )}
+      </Card>
+
+      {/* ── 修改密码 ── */}
+      <Card className="morandi-card" style={{ maxWidth: 680 }}>
+        <p className="st-section-title">修改登录密码</p>
+        <p className="st-section-desc">修改后需要重新登录</p>
+        <Form
+          form={pwdForm}
+          layout="vertical"
+          onFinish={handleChangePwd}
+          style={{ marginTop: 20 }}
+        >
+          <Form.Item name="old" label="原密码" rules={[{ required: true }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="当前密码" />
+          </Form.Item>
+          <Form.Item name="next" label="新密码" rules={[{ required: true, min: 6, message: '至少6个字符' }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="至少6个字符" />
+          </Form.Item>
+          <Form.Item name="confirm" label="确认新密码" rules={[{ required: true }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="再次输入新密码" />
+          </Form.Item>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button type="primary" htmlType="submit" loading={pwdSaving}>
+              确认修改密码
+            </Button>
+          </div>
+        </Form>
       </Card>
 
       <style>{`
-        .settings-icon {
-          width: 52px;
-          height: 52px;
-          border-radius: 14px;
-          background: linear-gradient(135deg, #C9A9A6 0%, #B89591 100%);
+        .st-section-title {
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--text-primary);
+          margin: 0 0 4px;
+        }
+        .st-section-desc {
+          font-size: 13px;
+          color: var(--text-muted);
+          margin: 0;
+        }
+
+        /* ── 环形区域 ── */
+        .st-rings {
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 24px;
-          color: #fff;
+          padding: 12px 0 8px;
+          gap: 0;
         }
-
-        .settings-main-card {
-          border: none;
-          box-shadow: 0 4px 24px rgba(60, 55, 48, 0.1);
-        }
-
-        .settings-card-header {
-          background: linear-gradient(135deg, #3D3A36 0%, #4A4740 100%);
-          padding: 24px 28px;
+        .st-ring-card {
+          flex: 1;
           display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+          padding: 0 8px;
         }
-
-        .header-content {
-          z-index: 1;
+        .st-ring-divider {
+          width: 1px;
+          height: 72px;
+          background: var(--border-color);
+          flex-shrink: 0;
         }
-
-        .header-decoration {
-          position: absolute;
-          right: 0;
-          top: 0;
-          pointer-events: none;
+        .st-ring-label {
+          font-size: 12px;
+          color: var(--text-secondary);
+          margin: 0;
+          text-align: center;
         }
-
-        .settings-card-body {
-          padding: 28px;
-          background: #fff;
-        }
-
-        .url-helper {
-          background: #F5F0E8;
-          padding: 12px 16px;
-          border-radius: 8px;
-          margin-bottom: 24px;
-          font-size: 13px;
-        }
-
-        .url-helper code {
-          background: rgba(201, 169, 166, 0.2);
-          padding: 2px 6px;
-          border-radius: 4px;
-          font-family: 'SF Mono', Monaco, monospace;
-          color: #6B6760;
-        }
-
-        .settings-actions {
-          display: flex;
-          gap: 12px;
-          justify-content: flex-end;
-        }
-
-        .info-card {
-          transition: all 0.3s ease;
-        }
-
-        .info-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 6px 20px rgba(60, 55, 48, 0.1);
-        }
-
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(16px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .animate-in {
-          animation: fadeInUp 0.4s ease forwards;
+        .st-ring-sub {
+          font-size: 11px;
+          color: var(--text-muted);
+          margin: 0;
+          text-align: center;
         }
       `}</style>
     </div>

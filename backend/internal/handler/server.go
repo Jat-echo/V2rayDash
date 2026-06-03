@@ -2,11 +2,14 @@ package handler
 
 import (
 	"database/sql"
+	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
+	"v2ray-dash/backend/internal/ssh"
 )
 
 type ServerHandler struct {
@@ -85,6 +88,36 @@ func (h *ServerHandler) Update(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, server)
+}
+
+func (h *ServerHandler) RestartXray(c *gin.Context) {
+	id := c.Param("id")
+	server, err := h.repo.GetByIDForInstall(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+		return
+	}
+
+	var auth ssh.SSHAuth
+	if server.SSHKeyType == "password" {
+		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+	} else {
+		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+	}
+
+	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("SSH连接失败: %v", err)})
+		return
+	}
+	defer client.Close()
+
+	if err := client.Execute("sudo systemctl restart xray", io.Discard, io.Discard); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("重启失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "xray已重启"})
 }
 
 func (h *ServerHandler) Delete(c *gin.Context) {

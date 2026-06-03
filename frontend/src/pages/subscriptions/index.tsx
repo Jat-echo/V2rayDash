@@ -1,15 +1,18 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Table, Button, Space, Modal, Form, Input, Select, message, Card, Tag, Checkbox, Tabs, Popconfirm } from 'antd'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
+import { Table, Button, Space, Modal, Form, Input, Select, message, Card, Tag, Checkbox, Popconfirm, Progress, Spin } from 'antd'
 import { CopyOutlined, QrcodeOutlined, HolderOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import QRCode from 'qrcode'
-import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping } from '../../services/api'
+import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, BandwidthPoint } from '../../services/api'
+import { formatBytes } from '../../utils/format'
 
 interface SubscriptionWithAccounts extends Subscription {
   accounts?: AccountWithServer[]
 }
+
+const AUTO_CREATE = '__auto_create__'
 
 export default function SubscriptionList() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionWithAccounts[]>([])
@@ -23,11 +26,15 @@ export default function SubscriptionList() {
   const [currentSubInfo, setCurrentSubInfo] = useState<SubscriptionWithAccounts | null>(null)
   const [form] = Form.useForm()
   const [selectedMappings, setSelectedMappings] = useState<AccountMapping[]>([])
-  const [activeTab, setActiveTab] = useState('uri')
   const [manageModalVisible, setManageModalVisible] = useState(false)
   const [managedAccounts, setManagedAccounts] = useState<AccountWithServer[]>([])
   const [manageSubscriptionId, setManageSubscriptionId] = useState<string>('')
   const [addAccountModalVisible, setAddAccountModalVisible] = useState(false)
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false)
+  const [pendingDeleteSub, setPendingDeleteSub] = useState<SubscriptionWithAccounts | null>(null)
+  const [orphanedAccounts, setOrphanedAccounts] = useState<AccountWithServer[]>([])
+  const [alsoDeleteAccounts, setAlsoDeleteAccounts] = useState(true)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -62,14 +69,25 @@ export default function SubscriptionList() {
 
   const handleAdd = async (values: any) => {
     if (selectedMappings.length === 0) {
-      message.error('请至少选择一个账号')
+      message.error('请至少选择一个服务器')
       return
     }
     try {
+      // 为标记为 auto-create 的服务器自动创建账号（使用订阅名称作为账号名）
+      const resolvedMappings = await Promise.all(
+        selectedMappings.map(async (m) => {
+          if (m.account_id !== AUTO_CREATE) return m
+          const newAcc = await accountAPI.create(m.server_id, {
+            email: values.name,
+            protocols: ['vless_reality_vision'],
+          })
+          return { server_id: m.server_id, account_id: newAcc.id }
+        })
+      )
       await subscriptionAPI.create({
         name: values.name,
         traffic_limit: values.traffic_limit ? values.traffic_limit * 1024 * 1024 * 1024 : 0,
-        account_mappings: selectedMappings,
+        account_mappings: resolvedMappings,
       })
       message.success('添加成功')
       setModalVisible(false)
@@ -81,13 +99,46 @@ export default function SubscriptionList() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const triggerDelete = (record: SubscriptionWithAccounts) => {
+    const subAccounts = record.accounts || []
+    if (subAccounts.length === 0) {
+      // 无关联账号，直接普通确认
+      setPendingDeleteSub(record)
+      setOrphanedAccounts([])
+      setAlsoDeleteAccounts(false)
+      setDeleteModalVisible(true)
+      return
+    }
+    // 找出只属于当前订阅、没有被其他订阅引用的账号
+    const otherSubAccountIds = new Set(
+      subscriptions
+        .filter(s => s.id !== record.id)
+        .flatMap(s => (s.accounts || []).map(a => a.id))
+    )
+    const orphans = subAccounts.filter(a => !otherSubAccountIds.has(a.id))
+    setPendingDeleteSub(record)
+    setOrphanedAccounts(orphans)
+    setAlsoDeleteAccounts(orphans.length > 0)
+    setDeleteModalVisible(true)
+  }
+
+  const handleDelete = async () => {
+    if (!pendingDeleteSub) return
+    setDeleting(true)
     try {
-      await subscriptionAPI.delete(id)
+      if (alsoDeleteAccounts && orphanedAccounts.length > 0) {
+        await Promise.all(orphanedAccounts.map(a => accountAPI.delete(a.id)))
+      }
+      await subscriptionAPI.delete(pendingDeleteSub.id)
       message.success('删除成功')
+      setDeleteModalVisible(false)
+      setPendingDeleteSub(null)
+      setOrphanedAccounts([])
       loadData()
     } catch (e) {
       message.error('删除失败')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -101,7 +152,6 @@ export default function SubscriptionList() {
       setCurrentLink(link)
       setCurrentEncoded(encoded)
       setLinkModalVisible(true)
-      setActiveTab('uri')
     } catch (e) {
       message.error('获取链接失败')
     }
@@ -137,16 +187,10 @@ export default function SubscriptionList() {
 
   const handleServerSelect = (serverId: string, checked: boolean) => {
     if (checked) {
-      const serverAccounts = accounts[serverId] || []
-      if (serverAccounts.length === 0) {
-        message.warn('该服务器暂无账号，请先创建')
-        return
-      }
-      if (selectedMappings.some(m => m.server_id === serverId)) {
-        message.warn('该服务器已选择账号')
-        return
-      }
-      setSelectedMappings([...selectedMappings, { server_id: serverId, account_id: serverAccounts[0].id }])
+      if (selectedMappings.some(m => m.server_id === serverId)) return
+      // 默认自动创建账号
+      const accountId = AUTO_CREATE
+      setSelectedMappings([...selectedMappings, { server_id: serverId, account_id: accountId }])
     } else {
       setSelectedMappings(selectedMappings.filter(m => m.server_id !== serverId))
     }
@@ -199,6 +243,7 @@ export default function SubscriptionList() {
       await subscriptionAPI.removeAccount(manageSubscriptionId, accountId)
       setManagedAccounts(managedAccounts.filter(acc => acc.id !== accountId))
       message.success('移除成功')
+      loadData()
     } catch (e) {
       message.error('移除失败')
     }
@@ -208,9 +253,10 @@ export default function SubscriptionList() {
     try {
       await subscriptionAPI.addAccount(manageSubscriptionId, { server_id: serverId, account_id: accountId })
       message.success('添加成功')
-      const accounts = await subscriptionAPI.getAccounts(manageSubscriptionId)
-      setManagedAccounts(accounts || [])
+      const updatedAccounts = await subscriptionAPI.getAccounts(manageSubscriptionId)
+      setManagedAccounts(updatedAccounts || [])
       setAddAccountModalVisible(false)
+      loadData()
     } catch (e) {
       message.error('添加失败')
     }
@@ -234,8 +280,31 @@ export default function SubscriptionList() {
         )
       }
     },
-    { title: '流量限制', dataIndex: 'traffic_limit', render: (v: number) => v ? `${(v/1024**3).toFixed(1)} GB` : '无限' },
-    { title: '已用流量', dataIndex: 'traffic_used', render: (v: number) => `${(v/1024**3).toFixed(1)} GB` },
+    {
+      title: '流量使用',
+      width: 200,
+      render: (_: any, record: SubscriptionWithAccounts) => {
+        const used = record.traffic_used || 0
+        const limit = record.traffic_limit || 0
+        const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
+        return (
+          <div style={{ minWidth: 140 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+              <span>{formatBytes(used)}</span>
+              <span style={{ color: '#999' }}>{limit > 0 ? formatBytes(limit) : '无限'}</span>
+            </div>
+            {limit > 0 && (
+              <Progress
+                percent={Math.round(pct)}
+                size="small"
+                strokeColor={pct > 90 ? '#ff4d4f' : pct > 75 ? '#faad14' : '#52c41a'}
+                showInfo={false}
+              />
+            )}
+          </div>
+        )
+      }
+    },
     { title: '状态', dataIndex: 'enable', render: (v: boolean) => v ? <Tag color="green">启用</Tag> : <Tag color="gray">禁用</Tag> },
     {
       title: '操作',
@@ -243,15 +312,7 @@ export default function SubscriptionList() {
         <Space>
           <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
           <Button size="small" onClick={() => openManageModal(record)}>管理账号</Button>
-          <Popconfirm
-            title="确认删除"
-            description="确定要删除这个订阅吗？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确认"
-            cancelText="取消"
-          >
-            <Button size="small" danger>删除</Button>
-          </Popconfirm>
+          <Button size="small" danger onClick={() => triggerDelete(record)}>删除</Button>
         </Space>
       ),
     },
@@ -260,9 +321,12 @@ export default function SubscriptionList() {
   return (
     <div className="animate-in">
       {/* Page Header */}
-      <div className="page-header">
-        <h1>订阅管理</h1>
-        <p>创建和管理用户的订阅链接，支持多服务器账号</p>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div>
+          <h1>订阅管理</h1>
+          <p>创建和管理用户的订阅链接，支持多服务器账号</p>
+        </div>
+        <Button type="primary" onClick={openModal} style={{ marginTop: 8 }}>+ 添加订阅</Button>
       </div>
 
       {/* Stats Grid */}
@@ -283,14 +347,16 @@ export default function SubscriptionList() {
         </div>
       </div>
 
-      {/* Action Bar */}
-      <Card className="morandi-card" style={{ marginBottom: 20 }}>
-        <Button type="primary" onClick={openModal}>+ 添加订阅</Button>
-      </Card>
-
       {/* Subscription Table */}
       <Card className="morandi-card">
-        <Table columns={columns} dataSource={subscriptions} rowKey="id" loading={loading} pagination={{ pageSize: 10 }} />
+        <Table
+          columns={columns}
+          dataSource={subscriptions}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 10 }}
+          expandable={{ expandedRowRender: (record) => <TrafficDetail subId={record.id} /> }}
+        />
       </Card>
 
       {/* Add Modal */}
@@ -310,12 +376,13 @@ export default function SubscriptionList() {
           </Form.Item>
 
           <div style={{ marginBottom: 16 }}>
-            <h4>选择服务器和账号（每个服务器只能选一个账号）</h4>
+            <h4>选择服务器（每个服务器选一个账号，无账号时自动以订阅名创建）</h4>
             <div style={{ maxHeight: 300, overflowY: 'auto' }}>
               {servers.map(server => {
                 const serverAccounts = accounts[server.id] || []
                 const isSelected = selectedMappings.some(m => m.server_id === server.id)
                 const selectedMapping = selectedMappings.find(m => m.server_id === server.id)
+                const isAutoCreate = selectedMapping?.account_id === AUTO_CREATE
 
                 return (
                   <div key={server.id} style={{
@@ -328,30 +395,32 @@ export default function SubscriptionList() {
                     <Checkbox
                       checked={isSelected}
                       onChange={(e) => handleServerSelect(server.id, e.target.checked)}
-                      style={{ marginBottom: 8 }}
+                      style={{ marginBottom: isSelected ? 8 : 0 }}
                     >
                       <strong>{server.name}</strong> ({server.ip})
                     </Checkbox>
 
-                    {isSelected && serverAccounts.length > 0 && (
+                    {isSelected && (
                       <div style={{ marginLeft: 24 }}>
                         <Select
-                          value={selectedMapping?.account_id || serverAccounts[0]?.id}
+                          value={selectedMapping?.account_id}
                           onChange={(v) => handleAccountChange(server.id, v)}
                           style={{ width: '100%' }}
                         >
+                          <Select.Option value={AUTO_CREATE}>
+                            <span style={{ color: '#1677ff' }}>+ 自动创建账号（使用订阅名称）</span>
+                          </Select.Option>
                           {serverAccounts.map(acc => (
                             <Select.Option key={acc.id} value={acc.id}>
                               {acc.email} {acc.enabled ? '' : '(已禁用)'}
                             </Select.Option>
                           ))}
                         </Select>
-                      </div>
-                    )}
-
-                    {isSelected && serverAccounts.length === 0 && (
-                      <div style={{ marginLeft: 24, color: '#ff4d4f' }}>
-                        该服务器暂无账号，请先创建
+                        {isAutoCreate && (
+                          <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+                            将自动创建名为「订阅名称」的 VLESS Reality 账号
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -361,7 +430,7 @@ export default function SubscriptionList() {
           </div>
 
           <Button type="primary" htmlType="submit" disabled={selectedMappings.length === 0}>
-            提交 ({selectedMappings.length} 个账号)
+            提交 ({selectedMappings.length} 个服务器)
           </Button>
         </Form>
       </Modal>
@@ -374,48 +443,30 @@ export default function SubscriptionList() {
         footer={null}
         width={600}
       >
-        <Tabs activeKey={activeTab} onChange={setActiveTab} style={{ marginTop: 16 }}
-          items={[
-            {
-              key: 'uri',
-              label: '订阅 URI',
-              children: <div style={{ marginBottom: 16 }}>
-                <h4>订阅地址 (通用)</h4>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <Input value={currentLink} readOnly style={{ flex: 1 }} />
-                  <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentLink)} />
+        <div style={{ marginTop: 16 }}>
+          <h4 style={{ marginBottom: 8 }}>订阅地址 (通用)</h4>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <Input value={currentLink} readOnly style={{ flex: 1 }} />
+            <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentLink)} />
+          </div>
+          <h4 style={{ marginBottom: 8 }}>Base64 编码 (ShadowRocket/Quantumult)</h4>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+            <Input value={currentEncoded} readOnly style={{ flex: 1 }} />
+            <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentEncoded)} />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            {currentLink ? (
+              <>
+                <QRCodeDisplay link={currentLink} label={currentSubInfo?.name || '订阅链接'} />
+                <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                  包含 {currentSubInfo?.accounts?.length || 0} 个节点，客户端扫码导入全部节点
                 </div>
-                <h4>Base64 编码 (ShadowRocket/Quantumult)</h4>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Input value={currentEncoded} readOnly style={{ flex: 1 }} />
-                  <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentEncoded)} />
-                </div>
-              </div>
-            },
-            {
-              key: 'qrcode',
-              label: '二维码',
-              children: <div style={{ textAlign: 'center' }}>
-                {currentSubInfo?.accounts?.map((acc, idx) => (
-                  <div key={acc.id} style={{ marginBottom: 24 }}>
-                    <h4>{acc.server_name} - {acc.email}</h4>
-                    <QRCodeDisplay
-                      link={`${currentLink}?aid=${acc.id}`}
-                      label={`${acc.server_name} / ${acc.email}`}
-                    />
-                  </div>
-                ))}
-                {(!currentSubInfo?.accounts || currentSubInfo.accounts.length === 0) && (
-                  <div style={{ padding: 40, color: '#999' }}>无账号信息</div>
-                )}
-              </div>
-            },
-          ]}
-        />
-
-        <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
-          <p>支持格式: ?format=vless (默认) | ?format=clash_meta | ?format=singbox | ?format=ss (ShadowRocket)</p>
-          <p>客户端扫码可直接导入单个账号，或使用上方订阅 URI 导入全部账号</p>
+              </>
+            ) : null}
+          </div>
+          <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+            <p>支持格式: ?format=vless (默认) | ?format=clash_meta | ?format=singbox | ?format=ss (ShadowRocket)</p>
+          </div>
         </div>
       </Modal>
 
@@ -453,6 +504,39 @@ export default function SubscriptionList() {
             </DndContext>
           )}
         </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        title="删除订阅"
+        open={deleteModalVisible}
+        onCancel={() => { setDeleteModalVisible(false); setPendingDeleteSub(null) }}
+        onOk={handleDelete}
+        okText="确认删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true, loading: deleting }}
+        width={480}
+      >
+        <p>确定要删除订阅 <strong>「{pendingDeleteSub?.name}」</strong> 吗？</p>
+        {orphanedAccounts.length > 0 && (
+          <>
+            <p style={{ marginBottom: 8 }}>以下关联账号未被其他订阅引用：</p>
+            <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+              {orphanedAccounts.map(a => (
+                <div key={a.id} style={{ padding: '4px 0', fontSize: 13 }}>
+                  <Tag color="blue" style={{ marginRight: 6 }}>{a.server_name}</Tag>
+                  {a.email}
+                </div>
+              ))}
+            </div>
+            <Checkbox
+              checked={alsoDeleteAccounts}
+              onChange={e => setAlsoDeleteAccounts(e.target.checked)}
+            >
+              同步删除以上关联账号
+            </Checkbox>
+          </>
+        )}
       </Modal>
 
       {/* Add Account Modal */}
@@ -500,6 +584,97 @@ export default function SubscriptionList() {
           })}
         </div>
       </Modal>
+    </div>
+  )
+}
+
+// Traffic monitoring detail row
+const TRAFFIC_RANGES = [
+  { label: '1小时', value: '1h' },
+  { label: '6小时', value: '6h' },
+  { label: '1天', value: '1d' },
+  { label: '7天', value: '7d' },
+  { label: '30天', value: '30d' },
+]
+
+function TrafficDetail({ subId }: { subId: string }) {
+  const [range, setRange] = useState('1d')
+  const [points, setPoints] = useState<BandwidthPoint[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await subscriptionAPI.getTrafficLogs(subId, range)
+      setPoints(data || [])
+    } catch {}
+    finally { setLoading(false) }
+  }, [subId, range])
+
+  useEffect(() => { load() }, [load])
+
+  // Compute delta points (traffic consumed between consecutive snapshots)
+  const deltaPoints = points.map((p, i) => ({
+    time: new Date(p.time).toLocaleString(),
+    value: i === 0 ? 0 : Math.max(0, p.value - points[i - 1].value),
+  }))
+
+  const totalDelta = deltaPoints.reduce((sum, p) => sum + p.value, 0)
+
+  return (
+    <div style={{ padding: '12px 24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>流量使用趋势</span>
+        <span style={{ color: '#999', fontSize: 13 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {TRAFFIC_RANGES.map(r => (
+            <Button
+              key={r.value}
+              size="small"
+              type={range === r.value ? 'primary' : 'default'}
+              onClick={() => setRange(r.value)}
+            >{r.label}</Button>
+          ))}
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 20 }}><Spin /></div>
+      ) : deltaPoints.length === 0 ? (
+        <div style={{ color: '#999', padding: '20px 0', textAlign: 'center' }}>
+          暂无流量数据（xray 流量统计需在 Agent 上配置并上报后生效）
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <svg width="100%" height="120" viewBox={`0 0 ${Math.max(deltaPoints.length * 40, 400)} 120`} preserveAspectRatio="none">
+            {(() => {
+              const w = Math.max(deltaPoints.length * 40, 400)
+              const maxVal = Math.max(...deltaPoints.map(p => p.value), 1)
+              const pts = deltaPoints.map((p, i) => {
+                const x = (i / Math.max(deltaPoints.length - 1, 1)) * (w - 20) + 10
+                const y = 100 - (p.value / maxVal) * 90
+                return { x, y, ...p }
+              })
+              const pathD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+              const fillD = `${pathD} L ${pts[pts.length - 1].x} 110 L ${pts[0].x} 110 Z`
+              return (
+                <>
+                  <defs>
+                    <linearGradient id={`tg-${subId}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#1677ff" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#1677ff" stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <path d={fillD} fill={`url(#tg-${subId})`} />
+                  <path d={pathD} fill="none" stroke="#1677ff" strokeWidth="2" strokeLinecap="round" />
+                  {pts.map((p, i) => (
+                    <title key={i}>{p.time}: {formatBytes(p.value)}</title>
+                  ))}
+                </>
+              )
+            })()}
+          </svg>
+        </div>
+      )}
     </div>
   )
 }

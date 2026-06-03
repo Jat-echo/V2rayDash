@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/config"
@@ -48,12 +49,28 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 	settingRepo := repository.NewSettingRepository(db.DB)
 	settingHandler := NewSettingHandler(settingRepo)
 
+	// 认证路由（无需 token）
+	authRepo := repository.NewAuthRepository(db.DB)
+	authHandler := NewAuthHandler(authRepo, settingRepo)
+	r.GET("/api/auth/status", authHandler.Status)
+	r.POST("/api/auth/setup", authHandler.Setup)
+	r.POST("/api/auth/login", authHandler.Login)
+
+	// Agent 心跳（使用 PSK，不需要用户 token）
+	accountRepo0 := NewAccountHandler(db.DB).Repo()
+	subRepo0 := repository.NewSubscriptionRepository(db.DB)
+	serverHandler0 := NewServerHandler(db.DB)
+	agentHandlerPub := NewAgentHandlerFull(logRepo, settingRepo, serverHandler0.repo, accountRepo0, subRepo0)
+	r.POST("/api/agent/heartbeat", agentHandlerPub.Heartbeat)
+	r.GET("/api/agent/config/:server_id", agentHandlerPub.GetConfig)
+
 	// 公开订阅接口 (无需认证)
 	subHandler := NewSubscriptionHandler(db.DB)
 	r.GET("/api/subscribe/:uuid", subHandler.ServeSubscription)
 
-	// API 路由组
+	// API 路由组（需要认证）
 	api := r.Group("/api")
+	api.Use(AuthMiddleware(settingRepo))
 	{
 		// 服务器管理
 		serverHandler := NewServerHandler(db.DB)
@@ -62,6 +79,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.GET("/servers/:id", serverHandler.Get)
 		api.PUT("/servers/:id", serverHandler.Update)
 		api.DELETE("/servers/:id", serverHandler.Delete)
+		api.POST("/servers/:id/restart-xray", serverHandler.RestartXray)
 
 		// 账号管理
 		accountHandler := NewAccountHandler(db.DB)
@@ -80,10 +98,12 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.DELETE("/subscriptions/:id/accounts/:accountId", subHandler.RemoveAccount)
 		api.PUT("/subscriptions/:id/accounts/order", subHandler.UpdateAccountsOrder)
 
-		// Agent 通信
-		agentHandler := NewAgentHandler(logRepo, settingRepo)
-		api.POST("/agent/heartbeat", agentHandler.Heartbeat)
-		api.GET("/agent/config/:server_id", agentHandler.GetConfig)
+		// 订阅流量查询
+		api.GET("/subscriptions/:id/traffic", agentHandlerPub.GetTrafficLogs)
+
+		// 认证管理（需要 token）
+		api.PUT("/auth/password", authHandler.ChangePassword)
+		api.POST("/auth/logout", authHandler.Logout)
 
 		// 日志
 		logHandler := NewLogHandler(logRepo)
@@ -96,14 +116,37 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 			c.File(installScriptPath)
 		})
 
+		// Agent 二进制文件下载
+		// 支持格式:
+		// /agents/latest/:os/:arch/agent (双段，如 linux/amd64)
+		// /agents/latest/:os_arch/agent (单段，如 linux_x86_64)
+		// 因为 Gin 不允许 catch-all 后还有路径，使用 *path 然后在 handler 中检查后缀
+		r.GET("/agents/latest/*path", func(c *gin.Context) {
+			path := c.Param("path")
+			// 移除前缀的 /
+			path = strings.TrimPrefix(path, "/")
+			if !strings.HasSuffix(path, "agent") && !strings.HasSuffix(path, "agent/") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+				return
+			}
+			agentBinaryPath := "/tmp/v2ray-agent"
+			if _, err := os.Stat(agentBinaryPath); err == nil {
+				c.Header("Content-Type", "application/octet-stream")
+				c.File(agentBinaryPath)
+				return
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": "agent binary not found"})
+		})
+
 		// 安装管理
-		installHandler := NewInstallHandler(installScriptPath, NewServerHandler(db.DB).repo, NewAccountHandler(db.DB).Repo())
+		installHandler := NewInstallHandler(installScriptPath, NewServerHandler(db.DB).repo, NewAccountHandler(db.DB).Repo(), settingRepo)
 		api.POST("/servers/:id/install", installHandler.StartInstall)
 
 		// 系统设置
 		api.GET("/settings/public-url", settingHandler.GetPublicURL)
 		api.PUT("/settings/public-url", settingHandler.UpdatePublicURL)
 		api.GET("/settings/public-ip", settingHandler.GetPublicIP)
+		api.GET("/settings/system-status", settingHandler.GetSystemStatus)
 	}
 
 	// 健康检查
