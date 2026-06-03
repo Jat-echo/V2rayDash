@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented } from 'antd'
 import { serverAPI, accountAPI, logAPI, Server, Account, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
-import { formatBytes } from '../../utils/format'
+import { formatBytes, withFlag } from '../../utils/format'
 
 // Convert ANSI escape codes to HTML with colors
 function ansiToHtml(text: string): string {
@@ -371,7 +371,7 @@ export default function ServerList() {
   }
 
   const columns = [
-    { title: '名称', dataIndex: 'name' },
+    { title: '名称', dataIndex: 'name', render: (v: string) => withFlag(v) },
     { title: 'IP', dataIndex: 'ip' },
     { title: 'SSH端口', dataIndex: 'ssh_port' },
     { title: 'SSH用户', dataIndex: 'ssh_user' },

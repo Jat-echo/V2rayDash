@@ -6,7 +6,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-
 import { CSS } from '@dnd-kit/utilities'
 import QRCode from 'qrcode'
 import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, BandwidthPoint } from '../../services/api'
-import { formatBytes } from '../../utils/format'
+import { formatBytes, withFlag } from '../../utils/format'
 
 interface SubscriptionWithAccounts extends Subscription {
   accounts?: AccountWithServer[]
@@ -29,6 +29,7 @@ export default function SubscriptionList() {
   const [manageModalVisible, setManageModalVisible] = useState(false)
   const [managedAccounts, setManagedAccounts] = useState<AccountWithServer[]>([])
   const [manageSubscriptionId, setManageSubscriptionId] = useState<string>('')
+  const [manageSubscriptionName, setManageSubscriptionName] = useState<string>('')
   const [addAccountModalVisible, setAddAccountModalVisible] = useState(false)
   const [deleteModalVisible, setDeleteModalVisible] = useState(false)
   const [pendingDeleteSub, setPendingDeleteSub] = useState<SubscriptionWithAccounts | null>(null)
@@ -210,6 +211,7 @@ export default function SubscriptionList() {
 
   const openManageModal = async (record: SubscriptionWithAccounts) => {
     setManageSubscriptionId(record.id)
+    setManageSubscriptionName(record.name)
     try {
       const accounts = await subscriptionAPI.getAccounts(record.id)
       setManagedAccounts(accounts || [])
@@ -249,9 +251,13 @@ export default function SubscriptionList() {
     }
   }
 
-  const handleAddAccount = async (serverId: string, accountId: string) => {
+  const handleAddAccount = async (serverId: string, accountId: string, autoCreate?: boolean) => {
     try {
-      await subscriptionAPI.addAccount(manageSubscriptionId, { server_id: serverId, account_id: accountId })
+      await subscriptionAPI.addAccount(manageSubscriptionId, {
+        server_id: serverId,
+        account_id: autoCreate ? undefined : accountId,
+        auto_create: autoCreate,
+      })
       message.success('添加成功')
       const updatedAccounts = await subscriptionAPI.getAccounts(manageSubscriptionId)
       setManagedAccounts(updatedAccounts || [])
@@ -274,7 +280,7 @@ export default function SubscriptionList() {
         return (
           <Space direction="vertical" size={2}>
             {record.accounts.map(acc => (
-              <Tag key={acc.id} color="blue">{acc.server_name} / {acc.email}</Tag>
+              <Tag key={acc.id} color="blue">{withFlag(acc.server_name)} / {acc.email}</Tag>
             ))}
           </Space>
         )
@@ -397,7 +403,7 @@ export default function SubscriptionList() {
                       onChange={(e) => handleServerSelect(server.id, e.target.checked)}
                       style={{ marginBottom: isSelected ? 8 : 0 }}
                     >
-                      <strong>{server.name}</strong> ({server.ip})
+                      <strong>{withFlag(server.name)}</strong> ({server.ip})
                     </Checkbox>
 
                     {isSelected && (
@@ -524,7 +530,7 @@ export default function SubscriptionList() {
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
               {orphanedAccounts.map(a => (
                 <div key={a.id} style={{ padding: '4px 0', fontSize: 13 }}>
-                  <Tag color="blue" style={{ marginRight: 6 }}>{a.server_name}</Tag>
+                  <Tag color="blue" style={{ marginRight: 6 }}>{withFlag(a.server_name)}</Tag>
                   {a.email}
                 </div>
               ))}
@@ -551,9 +557,9 @@ export default function SubscriptionList() {
           {servers.map(server => {
             const serverAccounts = accounts[server.id] || []
             const linkedAccountIds = managedAccounts.map(a => a.id)
-            // 同一服务器只能添加一个账号：如果该服务器已有账号在订阅中，就不再显示任何账号
             const hasLinkedAccountFromServer = managedAccounts.some(a => a.server_id === server.id)
             const availableAccounts = hasLinkedAccountFromServer ? [] : serverAccounts.filter(acc => !linkedAccountIds.includes(acc.id))
+            const hasAutoNameAccount = serverAccounts.some(acc => acc.email === manageSubscriptionName)
 
             return (
               <div key={server.id} style={{
@@ -562,21 +568,31 @@ export default function SubscriptionList() {
                 padding: 12,
                 marginBottom: 8,
               }}>
-                <strong>{server.name}</strong> ({server.ip})
-                {availableAccounts.length === 0 ? (
-                  <div style={{ marginTop: 8, color: '#999' }}>
-                    {hasLinkedAccountFromServer ? '已添加此服务器的账号' : '无可用账号'}
-                  </div>
+                <strong>{withFlag(server.name)}</strong> ({server.ip})
+                {hasLinkedAccountFromServer ? (
+                  <div style={{ marginTop: 8, color: '#999' }}>已添加此服务器的账号</div>
                 ) : (
                   <div style={{ marginTop: 8 }}>
-                    {availableAccounts.map(acc => (
-                      <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span>{acc.email} {acc.enabled ? '' : '(已禁用)'}</span>
-                        <Button size="small" type="primary" onClick={() => handleAddAccount(server.id, acc.id)}>
-                          添加
-                        </Button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ color: '#1677ff', fontSize: 13 }}>
+                        {hasAutoNameAccount ? `使用同名账号「${manageSubscriptionName}」` : `自动创建账号「${manageSubscriptionName}」`}
+                      </span>
+                      <Button size="small" type="primary" onClick={() => handleAddAccount(server.id, '', true)}>
+                        {hasAutoNameAccount ? '关联' : '创建并关联'}
+                      </Button>
+                    </div>
+                    {availableAccounts.length > 0 && (
+                      <div style={{ borderTop: '1px dashed #f0f0f0', paddingTop: 6, marginTop: 6 }}>
+                        {availableAccounts.map(acc => (
+                          <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                            <span style={{ color: '#555', fontSize: 13 }}>{acc.email} {acc.enabled ? '' : '(已禁用)'}</span>
+                            <Button size="small" onClick={() => handleAddAccount(server.id, acc.id)}>
+                              关联
+                            </Button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
                 )}
               </div>
@@ -716,7 +732,7 @@ function SortableItem({ id, account, onRemove }: { id: string; account: AccountW
           <HolderOutlined />
         </div>
         <div>
-          <div style={{ fontWeight: 'bold' }}>{account.server_name} / {account.email}</div>
+          <div style={{ fontWeight: 'bold' }}>{withFlag(account.server_name)} / {account.email}</div>
           <div style={{ fontSize: 12, color: '#999' }}>ID: {account.id.substring(0, 8)}...</div>
         </div>
       </div>

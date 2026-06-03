@@ -5,12 +5,52 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
 	"v2ray-dash/backend/internal/ssh"
 )
+
+var flagRules = []struct {
+	re   *regexp.Regexp
+	flag string
+}{
+	{regexp.MustCompile(`(?i)\b(us|usa|united.?states|america|nam|lax|sjc|nyc|chi|dal|sea|mia|atl)\b`), "🇺🇸"},
+	{regexp.MustCompile(`(?i)\b(hk|hkg|hong.?kong)\b`), "🇭🇰"},
+	{regexp.MustCompile(`(?i)\b(sgp?|singapore|sin)\b`), "🇸🇬"},
+	{regexp.MustCompile(`(?i)\b(jp|jpn|japan|tyo|osa|tok)\b`), "🇯🇵"},
+	{regexp.MustCompile(`(?i)\b(kr|kor|korea|sel)\b`), "🇰🇷"},
+	{regexp.MustCompile(`(?i)\b(tw|twn|taiwan|tpe)\b`), "🇹🇼"},
+	{regexp.MustCompile(`(?i)\b(de|deu|germany|ger)\b`), "🇩🇪"},
+	{regexp.MustCompile(`(?i)\b(uk|gbr?|britain|england|lon)\b`), "🇬🇧"},
+	{regexp.MustCompile(`(?i)\b(fr|fra|france|paris|cdg)\b`), "🇫🇷"},
+	{regexp.MustCompile(`(?i)\b(nl|nld|netherlands|ams)\b`), "🇳🇱"},
+	{regexp.MustCompile(`(?i)\b(au|aus|australia|syd|mel)\b`), "🇦🇺"},
+	{regexp.MustCompile(`(?i)\b(ca|can|canada|yvr|yyz|tor)\b`), "🇨🇦"},
+	{regexp.MustCompile(`(?i)\b(ru|rus|russia|msk)\b`), "🇷🇺"},
+	{regexp.MustCompile(`(?i)\b(cn|chn|china|bj|sh|gz)\b`), "🇨🇳"},
+	{regexp.MustCompile(`(?i)\b(in|ind|india|mum|del|bom)\b`), "🇮🇳"},
+	{regexp.MustCompile(`(?i)\b(br|bra|brazil|sao|gru)\b`), "🇧🇷"},
+	{regexp.MustCompile(`(?i)\b(tr|tur|turkey|ist)\b`), "🇹🇷"},
+	{regexp.MustCompile(`(?i)\b(my|mys|malaysia|kul)\b`), "🇲🇾"},
+	{regexp.MustCompile(`(?i)\b(th|tha|thailand|bkk)\b`), "🇹🇭"},
+	{regexp.MustCompile(`(?i)\b(vn|vnm|vietnam|hcm|han)\b`), "🇻🇳"},
+	{regexp.MustCompile(`(?i)\b(ph|phl|philippines|mnl)\b`), "🇵🇭"},
+	{regexp.MustCompile(`(?i)\b(id|idn|indonesia|jkt)\b`), "🇮🇩"},
+	{regexp.MustCompile(`(?i)\b(ar|arg|argentina|bue)\b`), "🇦🇷"},
+	{regexp.MustCompile(`(?i)\b(voll?)\b`), "🇭🇰"},
+}
+
+func countryFlag(name string) string {
+	for _, r := range flagRules {
+		if r.re.MatchString(name) {
+			return r.flag
+		}
+	}
+	return "🌐"
+}
 
 type RealityConfig struct {
 	Enabled    bool
@@ -1621,7 +1661,7 @@ func (s *AccountService) GenerateVLESSSubscriptionMulti(accounts []*model.Accoun
 			continue
 		}
 		reality := realityConfigs[acc.ServerID]
-		remark := fmt.Sprintf("%s-%s", server.Name, acc.Email[:min(len(acc.Email), 8)])
+		remark := fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)])
 		link := s.GetAccountLink(acc, server.IP, "vless", reality, remark)
 		lines = append(lines, link)
 	}
@@ -1648,7 +1688,7 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 			port = reality.Port
 		}
 
-		nodeName := fmt.Sprintf("%s-%s", server.Name, acc.Email[:min(len(acc.Email), 8)])
+		nodeName := fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)])
 
 		var proxy map[string]interface{}
 		if reality != nil && reality.Enabled {
@@ -1757,7 +1797,7 @@ func (s *AccountService) GenerateSingBoxSubscriptionMulti(accounts []*model.Acco
 		var outbound map[string]interface{}
 		if reality != nil && reality.Enabled {
 			outbound = map[string]interface{}{
-				"tag":         fmt.Sprintf("%s-%s", server.Name, acc.Email[:8]),
+				"tag":         fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)]),
 				"type":       "vless",
 				"server":     server.IP,
 				"server_port": 443,
@@ -1779,7 +1819,7 @@ func (s *AccountService) GenerateSingBoxSubscriptionMulti(accounts []*model.Acco
 			}
 		} else {
 			outbound = map[string]interface{}{
-				"tag":         fmt.Sprintf("%s-%s", server.Name, acc.Email[:8]),
+				"tag":         fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)]),
 				"type":       "vless",
 				"server":     server.IP,
 				"server_port": 443,

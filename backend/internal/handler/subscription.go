@@ -11,6 +11,7 @@ import (
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
 	"v2ray-dash/backend/internal/service"
+	"v2ray-dash/backend/internal/ssh"
 )
 
 type SubscriptionHandler struct {
@@ -247,16 +248,25 @@ func (h *SubscriptionHandler) AddAccount(c *gin.Context) {
 
 	var accountID string
 	if req.AutoCreate {
-		newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
-			ServerID:  req.ServerID,
-			Email:    fmt.Sprintf("auto-%s", id[:8]),
-			Protocols: []string{"vless_tcp"},
-		})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
-			return
+		email := fmt.Sprintf("auto-%s", id[:8])
+		if sub, err := h.repo.GetByID(id); err == nil {
+			email = sub.Name
 		}
-		accountID = newAccount.ID
+		// Reuse existing account with the same name on this server if present
+		if existing, err := h.accountRepo.GetByServerIDAndEmail(req.ServerID, email); err == nil {
+			accountID = existing.ID
+		} else {
+			newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
+				ServerID:  req.ServerID,
+				Email:     email,
+				Protocols: []string{"vless_reality_vision"},
+			})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
+				return
+			}
+			accountID = newAccount.ID
+		}
 	} else {
 		accountID = req.AccountID
 	}
@@ -264,6 +274,17 @@ func (h *SubscriptionHandler) AddAccount(c *gin.Context) {
 	if err := h.subAccRepo.AddAccount(id, accountID); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	// 同步到远程 xray 服务器
+	if server, err := h.serverRepo.GetByIDForInstall(req.ServerID); err == nil {
+		var auth ssh.SSHAuth
+		if server.SSHKeyType == "password" {
+			auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+		} else {
+			auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+		}
+		go h.accountSvc.SyncAllToRemote(req.ServerID, auth)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "account added"})

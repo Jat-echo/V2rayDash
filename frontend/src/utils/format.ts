@@ -4,3 +4,41 @@ export function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024))
   return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + units[Math.min(i, units.length - 1)]
 }
+
+const FLAG_MAP: [RegExp, string][] = [
+  [/\b(us|usa|united.?states|america|nam|lax|sjc|nyc|chi|dal|sea|mia|atl)\b/i, '🇺🇸'],
+  [/\b(hk|hkg|hong.?kong)\b/i, '🇭🇰'],
+  [/\b(sgp?|singapore|sin)\b/i, '🇸🇬'],
+  [/\b(jp|jpn|japan|tyo|osa|tok)\b/i, '🇯🇵'],
+  [/\b(kr|kor|korea|sel)\b/i, '🇰🇷'],
+  [/\b(tw|twn|taiwan|tpe)\b/i, '🇹🇼'],
+  [/\b(de|deu|germany|ger|fra|fra1)\b/i, '🇩🇪'],
+  [/\b(uk|gbr?|britain|england|lon)\b/i, '🇬🇧'],
+  [/\b(fr|fra|france|paris|cdg)\b/i, '🇫🇷'],
+  [/\b(nl|nld|netherlands|ams)\b/i, '🇳🇱'],
+  [/\b(au|aus|australia|syd|mel)\b/i, '🇦🇺'],
+  [/\b(ca|can|canada|yvr|yyz|tor)\b/i, '🇨🇦'],
+  [/\b(ru|rus|russia|msk)\b/i, '🇷🇺'],
+  [/\b(cn|chn|china|bj|sh|gz)\b/i, '🇨🇳'],
+  [/\b(in|ind|india|mum|del|bom)\b/i, '🇮🇳'],
+  [/\b(br|bra|brazil|sao|gru)\b/i, '🇧🇷'],
+  [/\b(tr|tur|turkey|ist)\b/i, '🇹🇷'],
+  [/\b(my|mys|malaysia|kul)\b/i, '🇲🇾'],
+  [/\b(th|tha|thailand|bkk)\b/i, '🇹🇭'],
+  [/\b(vn|vnm|vietnam|hcm|han)\b/i, '🇻🇳'],
+  [/\b(ph|phl|philippines|mnl)\b/i, '🇵🇭'],
+  [/\b(id|idn|indonesia|jkt)\b/i, '🇮🇩'],
+  [/\b(ar|arg|argentina|bue)\b/i, '🇦🇷'],
+  [/\b(voll?)\b/i, '🇭🇰'],
+]
+
+export function getCountryFlag(name: string): string {
+  for (const [re, flag] of FLAG_MAP) {
+    if (re.test(name)) return flag
+  }
+  return '🌐'
+}
+
+export function withFlag(name: string): string {
+  return `${getCountryFlag(name)} ${name}`
+}
