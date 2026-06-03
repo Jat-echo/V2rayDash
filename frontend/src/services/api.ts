@@ -75,6 +75,7 @@ export interface AccountMapping {
 export interface Subscription {
   id: string
   name: string
+  remark: string
   uuid: string
   enable: boolean
   traffic_limit: number
@@ -86,6 +87,7 @@ export interface Subscription {
 
 export interface CreateSubscriptionRequest {
   name: string
+  remark?: string
   traffic_limit?: number
   account_mappings: AccountMapping[]
 }

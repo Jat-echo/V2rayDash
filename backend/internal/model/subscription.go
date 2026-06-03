@@ -6,6 +6,7 @@ type Subscription struct {
 	ID           string    `json:"id"`
 	ServerID     string    `json:"server_id"`
 	Name         string    `json:"name"`
+	Remark       string    `json:"remark"`
 	UUID         string    `json:"uuid"`
 	Enable       bool      `json:"enable"`
 	TrafficLimit int64     `json:"traffic_limit"`
@@ -20,14 +21,16 @@ type SubscriptionWithAccounts struct {
 }
 
 type CreateSubscriptionRequest struct {
-	Name           string           `json:"name" binding:"required"`
-	TrafficLimit   int64            `json:"traffic_limit"`
+	Name            string           `json:"name" binding:"required"`
+	Remark          string           `json:"remark"`
+	TrafficLimit    int64            `json:"traffic_limit"`
 	AccountMappings []AccountMapping `json:"account_mappings"`
 }
 
 type UpdateSubscriptionRequest struct {
 	Name            *string           `json:"name"`
-	Enable          *bool              `json:"enable"`
-	TrafficLimit    *int64             `json:"traffic_limit"`
-	AccountMappings *[]AccountMapping  `json:"account_mappings"`
+	Remark          *string           `json:"remark"`
+	Enable          *bool             `json:"enable"`
+	TrafficLimit    *int64            `json:"traffic_limit"`
+	AccountMappings *[]AccountMapping `json:"account_mappings"`
 }

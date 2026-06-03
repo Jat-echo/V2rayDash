@@ -87,6 +87,7 @@ export default function SubscriptionList() {
       )
       await subscriptionAPI.create({
         name: values.name,
+        remark: values.remark || '',
         traffic_limit: values.traffic_limit ? values.traffic_limit * 1024 * 1024 * 1024 : 0,
         account_mappings: resolvedMappings,
       })
@@ -269,7 +270,16 @@ export default function SubscriptionList() {
   }
 
   const columns = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (name: string, record: SubscriptionWithAccounts) => (
+        <div>
+          <div style={{ fontWeight: 500 }}>{name}</div>
+          {record.remark && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{record.remark}</div>}
+        </div>
+      ),
+    },
     { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
     {
       title: '服务器/账号',
@@ -376,6 +386,9 @@ export default function SubscriptionList() {
         <Form form={form} onFinish={handleAdd} layout="vertical" style={{ marginTop: 20 }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input placeholder="例如: VIP用户" />
+          </Form.Item>
+          <Form.Item name="remark" label="备注">
+            <Input placeholder="可选，中文备注，方便识别用户" />
           </Form.Item>
           <Form.Item name="traffic_limit" label="流量限制(GB)">
             <Input type="number" placeholder="留空表示无限流量" />
