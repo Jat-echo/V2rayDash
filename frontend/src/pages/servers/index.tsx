@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented } from 'antd'
+import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons'
 import { serverAPI, accountAPI, logAPI, Server, Account, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
@@ -397,16 +398,18 @@ export default function ServerList() {
       title: '操作',
       render: (_: any, record: Server) => (
         <Space>
-          <Button size="small" type="primary" onClick={(e) => { e.stopPropagation(); handleInstallClick(record); }}>安装</Button>
-          <Button size="small" onClick={(e) => { e.stopPropagation(); handleEditClick(record); }}>编辑</Button>
-          <Button size="small" onClick={(e) => { e.stopPropagation(); handleOpenAccountModal(record); }}>账号管理</Button>
+          <Button size="small" type="primary" icon={<CloudUploadOutlined />} title="安装 Agent" onClick={(e) => { e.stopPropagation(); handleInstallClick(record); }} />
+          <Button size="small" icon={<EditOutlined />} title="编辑" onClick={(e) => { e.stopPropagation(); handleEditClick(record); }} />
+          <Button size="small" icon={<TeamOutlined />} title="账号管理" onClick={(e) => { e.stopPropagation(); handleOpenAccountModal(record); }} />
           <Button
             size="small"
+            icon={<ReloadOutlined />}
+            title="重启 xray"
             loading={restartingXray === record.id}
             onClick={(e) => handleRestartXray(record.id, e)}
-          >重启服务</Button>
+          />
           <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger onClick={(e) => e.stopPropagation()}>删除</Button>
+            <Button size="small" danger icon={<DeleteOutlined />} title="删除" onClick={(e) => e.stopPropagation()} />
           </Popconfirm>
         </Space>
       ),
