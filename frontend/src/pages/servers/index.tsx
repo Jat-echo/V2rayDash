@@ -806,48 +806,51 @@ export default function ServerList() {
                 <Spin spinning={assignLoading}>
                   {(() => {
                     const serverId = selectedServerForAccounts?.id || ''
+                    const assignedSubs = assignSubs.filter(
+                      sub => getSubAssignStatus(sub, serverId, assignServerAccounts) === 'assigned'
+                    )
                     const selectableSubs = assignSubs.filter(
                       sub => getSubAssignStatus(sub, serverId, assignServerAccounts) !== 'assigned'
                     )
-                    const allSelected = selectableSubs.length > 0 &&
+                    const allDeleteSelected = assignedSubs.length > 0 &&
+                      assignedSubs.every(s => deleteSelected.includes(s.id))
+                    const someDeleteSelected = assignedSubs.some(s => deleteSelected.includes(s.id)) && !allDeleteSelected
+                    const allAssignSelected = selectableSubs.length > 0 &&
                       selectableSubs.every(s => assignSelected.includes(s.id))
-                    const someSelected = selectableSubs.some(s => assignSelected.includes(s.id)) && !allSelected
+                    const someAssignSelected = selectableSubs.some(s => assignSelected.includes(s.id)) && !allAssignSelected
                     return (
-                      <>
-                        <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
-                          <Checkbox
-                            checked={allSelected}
-                            indeterminate={someSelected}
-                            onChange={e => setAssignSelected(
-                              e.target.checked ? selectableSubs.map(s => s.id) : []
-                            )}
-                          >
-                            全选（{selectableSubs.length} 个可分配）
-                          </Checkbox>
-                        </div>
-                        <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-                          {assignSubs.map(sub => {
-                            const status = getSubAssignStatus(sub, serverId, assignServerAccounts)
-                            const existingAcc = assignServerAccounts.find(a => a.email === sub.name)
-                            const disabled = status === 'assigned'
-                            return (
+                      <div style={{ display: 'flex', gap: 0, minHeight: 200 }}>
+                        {/* Left: assigned */}
+                        <div style={{ flex: 1, paddingRight: 12, borderRight: '1px solid #f0f0f0', display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
+                            <Checkbox
+                              checked={allDeleteSelected}
+                              indeterminate={someDeleteSelected}
+                              onChange={e => setDeleteSelected(
+                                e.target.checked ? assignedSubs.map(s => s.id) : []
+                              )}
+                            >
+                              已关联（{assignedSubs.length} 个）
+                            </Checkbox>
+                          </div>
+                          <div style={{ flex: 1, maxHeight: 280, overflowY: 'auto' }}>
+                            {assignedSubs.map(sub => (
                               <div
                                 key={sub.id}
                                 style={{
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'space-between',
-                                  padding: '8px 0',
+                                  padding: '6px 0',
                                   borderBottom: '1px solid #f0f0f0',
                                 }}
                               >
                                 <Checkbox
-                                  disabled={disabled}
-                                  checked={assignSelected.includes(sub.id)}
-                                  onChange={e => setAssignSelected(
+                                  checked={deleteSelected.includes(sub.id)}
+                                  onChange={e => setDeleteSelected(
                                     e.target.checked
-                                      ? [...assignSelected, sub.id]
-                                      : assignSelected.filter(id => id !== sub.id)
+                                      ? [...deleteSelected, sub.id]
+                                      : deleteSelected.filter(id => id !== sub.id)
                                   )}
                                 >
                                   <span style={{ fontWeight: 500 }}>{sub.name}</span>
@@ -857,33 +860,105 @@ export default function ServerList() {
                                     </span>
                                   )}
                                 </Checkbox>
-                                {status === 'assigned' && <Tag>已分配</Tag>}
-                                {status === 'existing' && (
-                                  <Tag color="blue">已有账号 · {existingAcc?.email}</Tag>
-                                )}
-                                {status === 'new' && (
-                                  <Tag color="default">将新建 · {sub.name}</Tag>
-                                )}
+                                <Tag>已分配</Tag>
                               </div>
-                            )
-                          })}
-                          {assignSubs.length === 0 && !assignLoading && (
-                            <div style={{ textAlign: 'center', color: '#999', padding: '24px 0' }}>
-                              暂无订阅
-                            </div>
-                          )}
+                            ))}
+                            {assignedSubs.length === 0 && !assignLoading && (
+                              <div style={{ textAlign: 'center', color: '#999', padding: '24px 0', fontSize: 13 }}>
+                                暂无已关联订阅
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ marginTop: 12, textAlign: 'left' }}>
+                            <Popconfirm
+                              title={`确定解除关联并删除这 ${deleteSelected.length} 个账号吗？此操作不可恢复。`}
+                              onConfirm={handleDeleteAssign}
+                              disabled={deleteSelected.length === 0}
+                              okText="确认删除"
+                              cancelText="取消"
+                              okButtonProps={{ danger: true }}
+                            >
+                              <Button
+                                danger
+                                loading={deleteSubmitting}
+                                disabled={deleteSelected.length === 0}
+                              >
+                                删除关联（已选 {deleteSelected.length} 个）
+                              </Button>
+                            </Popconfirm>
+                          </div>
                         </div>
-                        <div style={{ marginTop: 16, textAlign: 'right' }}>
-                          <Button
-                            type="primary"
-                            loading={assignSubmitting}
-                            disabled={assignSelected.length === 0}
-                            onClick={handleAssign}
-                          >
-                            确认分配（已选 {assignSelected.length} 个）
-                          </Button>
+
+                        {/* Right: assignable */}
+                        <div style={{ flex: 1, paddingLeft: 12, display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
+                            <Checkbox
+                              checked={allAssignSelected}
+                              indeterminate={someAssignSelected}
+                              onChange={e => setAssignSelected(
+                                e.target.checked ? selectableSubs.map(s => s.id) : []
+                              )}
+                            >
+                              可分配（{selectableSubs.length} 个）
+                            </Checkbox>
+                          </div>
+                          <div style={{ flex: 1, maxHeight: 280, overflowY: 'auto' }}>
+                            {selectableSubs.map(sub => {
+                              const status = getSubAssignStatus(sub, serverId, assignServerAccounts)
+                              const existingAcc = assignServerAccounts.find(a => a.email === sub.name)
+                              return (
+                                <div
+                                  key={sub.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '6px 0',
+                                    borderBottom: '1px solid #f0f0f0',
+                                  }}
+                                >
+                                  <Checkbox
+                                    checked={assignSelected.includes(sub.id)}
+                                    onChange={e => setAssignSelected(
+                                      e.target.checked
+                                        ? [...assignSelected, sub.id]
+                                        : assignSelected.filter(id => id !== sub.id)
+                                    )}
+                                  >
+                                    <span style={{ fontWeight: 500 }}>{sub.name}</span>
+                                    {sub.remark && (
+                                      <span style={{ color: '#999', marginLeft: 6, fontSize: 12 }}>
+                                        {sub.remark}
+                                      </span>
+                                    )}
+                                  </Checkbox>
+                                  {status === 'existing' && (
+                                    <Tag color="blue">已有账号 · {existingAcc?.email}</Tag>
+                                  )}
+                                  {status === 'new' && (
+                                    <Tag color="default">将新建 · {sub.name}</Tag>
+                                  )}
+                                </div>
+                              )
+                            })}
+                            {selectableSubs.length === 0 && !assignLoading && (
+                              <div style={{ textAlign: 'center', color: '#999', padding: '24px 0', fontSize: 13 }}>
+                                全部已关联
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ marginTop: 12, textAlign: 'right' }}>
+                            <Button
+                              type="primary"
+                              loading={assignSubmitting}
+                              disabled={assignSelected.length === 0}
+                              onClick={handleAssign}
+                            >
+                              确认分配（已选 {assignSelected.length} 个）
+                            </Button>
+                          </div>
                         </div>
-                      </>
+                      </div>
                     )
                   })()}
                 </Spin>
