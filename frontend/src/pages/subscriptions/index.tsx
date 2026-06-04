@@ -346,6 +346,19 @@ export default function SubscriptionList() {
       render: (_: any, record: SubscriptionWithAccounts) => (
         <Space>
           <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            title="复制订阅链接"
+            onClick={async () => {
+              try {
+                const { link } = await subscriptionAPI.getLink(record.id)
+                copyToClipboard(link)
+              } catch {
+                message.error('获取链接失败')
+              }
+            }}
+          />
           <Button size="small" onClick={() => openManageModal(record)}>编辑</Button>
           <Button size="small" danger onClick={() => triggerDelete(record)}>删除</Button>
         </Space>
