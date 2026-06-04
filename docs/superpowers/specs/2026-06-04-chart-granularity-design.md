@@ -116,7 +116,15 @@ func cleanOldData(db *database.DB) {
 | `backend/internal/repository/log.go` | `GetNodeStatusesByTimeRange` 改用分桶 SQL |
 | `backend/internal/handler/log.go` | 无需改动（delta 计算自动适配） |
 | `backend/cmd/server/main.go` | 启动 `startCleanupWorker` |
-| `frontend/src/pages/monitor/index.tsx` | 时间窗口选项改为 1h/3h/6h/1d/7d/30d |
+| `frontend/src/pages/servers/index.tsx` | 时间窗口选项从 1h/3h/6h/12h/1d/3d 改为 1h/3h/6h/1d/7d/30d |
+
+## 删除文件
+
+以下文件未在路由中引用，为历史遗留死代码，一并清理：
+
+- `frontend/src/pages/monitor/index.tsx`
+- `frontend/src/pages/monitor/index_new.tsx`
+- `frontend/src/pages/monitor/NewMonitor.tsx`
 
 ## 不需要改动
 
