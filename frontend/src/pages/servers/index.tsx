@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented, Tabs, Spin, Checkbox } from 'antd'
-import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons'
+import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons'
 import { serverAPI, accountAPI, logAPI, subscriptionAPI, Server, Account, Subscription, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
@@ -91,6 +91,7 @@ export default function ServerList() {
   const [timeRange, setTimeRange] = useState('1h')
   const [statuses, setStatuses] = useState<Map<string, NodeStatusResponse>>(new Map())
   const [restartingXray, setRestartingXray] = useState<string | null>(null)
+  const [syncingXray, setSyncingXray] = useState<string | null>(null)
   const [accountModalTab, setAccountModalTab] = useState<string>('accounts')
   const [assignSubs, setAssignSubs] = useState<Subscription[]>([])
   const [assignServerAccounts, setAssignServerAccounts] = useState<Account[]>([])
@@ -264,6 +265,19 @@ export default function ServerList() {
       message.error('重启失败')
     } finally {
       setRestartingXray(null)
+    }
+  }
+
+  const handleSyncXray = async (serverId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setSyncingXray(serverId)
+    try {
+      await serverAPI.syncXray(serverId)
+      message.success('xray 配置同步成功')
+    } catch {
+      message.error('xray 同步失败')
+    } finally {
+      setSyncingXray(null)
     }
   }
 
@@ -495,6 +509,13 @@ export default function ServerList() {
             title="重启 xray"
             loading={restartingXray === record.id}
             onClick={(e) => handleRestartXray(record.id, e)}
+          />
+          <Button
+            size="small"
+            icon={<SyncOutlined />}
+            title="同步 xray 配置"
+            loading={syncingXray === record.id}
+            onClick={(e) => handleSyncXray(record.id, e)}
           />
           <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} title="删除" onClick={(e) => e.stopPropagation()} />

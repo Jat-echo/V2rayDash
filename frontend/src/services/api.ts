@@ -172,6 +172,7 @@ export const serverAPI = {
   update: (id: string, data: Partial<Server>) => api.put(`/servers/${id}`, data),
   delete: (id: string) => api.delete(`/servers/${id}`),
   restartXray: (id: string) => api.post(`/servers/${id}/restart-xray`).then(r => r.data),
+  syncXray: (id: string) => api.post(`/servers/${id}/sync-xray`).then(r => r.data),
 }
 
 export interface AccountTrafficSeries {
