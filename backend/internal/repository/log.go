@@ -107,17 +107,27 @@ func (r *LogRepository) ListNodeStatuses() ([]*model.NodeStatus, error) {
 
 func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange string) ([]*model.NodeStatus, error) {
 	interval := timeRangeToInterval(timeRange, "1 hour")
+	bucket := timeRangeToBucketSeconds(timeRange)
 
 	query := `
-		SELECT id, server_id, cpu_percent, memory_percent, disk_percent,
-		       bandwidth_in, bandwidth_out, v2ray_status, reported_at
+		SELECT
+		  server_id,
+		  to_timestamp(floor(extract(epoch from reported_at) / $3) * $3) AS bucket_time,
+		  MAX(cpu_percent)    AS cpu_percent,
+		  MAX(memory_percent) AS memory_percent,
+		  MAX(disk_percent)   AS disk_percent,
+		  MAX(bandwidth_in)   AS bandwidth_in,
+		  MAX(bandwidth_out)  AS bandwidth_out,
+		  MAX(v2ray_status)   AS v2ray_status
 		FROM node_status
 		WHERE reported_at > NOW() - $2::interval
-		AND ($1 = '' OR server_id = $1::uuid)
-		ORDER BY reported_at ASC
+		  AND ($1 = '' OR server_id = $1::uuid)
+		GROUP BY server_id,
+		         to_timestamp(floor(extract(epoch from reported_at) / $3) * $3)
+		ORDER BY server_id, bucket_time ASC
 	`
 
-	rows, err := r.db.Query(query, serverID, interval)
+	rows, err := r.db.Query(query, serverID, interval, bucket)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +136,11 @@ func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange st
 	var statuses []*model.NodeStatus
 	for rows.Next() {
 		var s model.NodeStatus
-		err := rows.Scan(&s.ID, &s.ServerID, &s.CPUPercent, &s.MemoryPercent,
-			&s.DiskPercent, &s.BandwidthIn, &s.BandwidthOut, &s.V2rayStatus, &s.ReportedAt)
+		err := rows.Scan(
+			&s.ServerID, &s.ReportedAt,
+			&s.CPUPercent, &s.MemoryPercent, &s.DiskPercent,
+			&s.BandwidthIn, &s.BandwidthOut, &s.V2rayStatus,
+		)
 		if err != nil {
 			return nil, err
 		}
