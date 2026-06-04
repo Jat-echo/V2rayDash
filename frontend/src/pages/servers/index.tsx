@@ -183,19 +183,30 @@ export default function ServerList() {
   const handleAssign = async () => {
     if (!selectedServerForAccounts || assignSelected.length === 0) return
     setAssignSubmitting(true)
+    let succeeded = 0, failed = 0
     try {
-      const results = await Promise.allSettled(
-        assignSelected.map(id =>
-          subscriptionAPI.addAccount(id, { server_id: selectedServerForAccounts.id, auto_create: true })
-        )
-      )
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
+      for (const id of assignSelected) {
+        try {
+          await subscriptionAPI.addAccount(id, {
+            server_id: selectedServerForAccounts.id,
+            auto_create: true,
+          })
+          succeeded++
+        } catch {
+          failed++
+        }
+      }
       if (failed === 0) {
         message.success(`成功分配 ${succeeded} 个订阅`)
       } else {
         message.warning(`${succeeded} 个成功，${failed} 个失败`)
       }
+      try {
+        await serverAPI.syncXray(selectedServerForAccounts.id)
+      } catch {
+        message.warning('xray 同步失败，请手动点击同步按钮')
+      }
+      setAssignSelected([])
       await loadAssignData()
     } finally {
       setAssignSubmitting(false)
