@@ -16,6 +16,23 @@ import (
 	"v2ray-dash/backend/pkg/database"
 )
 
+func startCleanupWorker(db *database.DB) {
+	go func() {
+		cleanOldData(db)
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleanOldData(db)
+		}
+	}()
+}
+
+func cleanOldData(db *database.DB) {
+	db.Exec(`DELETE FROM account_traffic_logs      WHERE recorded_at < NOW() - INTERVAL '30 days'`)
+	db.Exec(`DELETE FROM node_status               WHERE reported_at < NOW() - INTERVAL '30 days'`)
+	db.Exec(`DELETE FROM subscription_traffic_logs WHERE recorded_at < NOW() - INTERVAL '30 days'`)
+}
+
 func main() {
 	cfg := config.Load()
 	cfg.Validate()
@@ -29,6 +46,8 @@ func main() {
 	if err := database.InitSchema(db); err != nil {
 		log.Fatalf("Failed to init schema: %v", err)
 	}
+
+	startCleanupWorker(db)
 
 	r := gin.Default()
 	handler.SetupRoutes(r, db, cfg)
