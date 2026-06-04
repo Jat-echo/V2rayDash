@@ -28,9 +28,19 @@ func startCleanupWorker(db *database.DB) {
 }
 
 func cleanOldData(db *database.DB) {
-	db.Exec(`DELETE FROM account_traffic_logs      WHERE recorded_at < NOW() - INTERVAL '30 days'`)
-	db.Exec(`DELETE FROM node_status               WHERE reported_at < NOW() - INTERVAL '30 days'`)
-	db.Exec(`DELETE FROM subscription_traffic_logs WHERE recorded_at < NOW() - INTERVAL '30 days'`)
+	queries := []struct {
+		sql  string
+		name string
+	}{
+		{`DELETE FROM account_traffic_logs      WHERE recorded_at < NOW() - INTERVAL '30 days'`, "account_traffic_logs"},
+		{`DELETE FROM node_status               WHERE reported_at < NOW() - INTERVAL '30 days'`, "node_status"},
+		{`DELETE FROM subscription_traffic_logs WHERE recorded_at < NOW() - INTERVAL '30 days'`, "subscription_traffic_logs"},
+	}
+	for _, q := range queries {
+		if _, err := db.Exec(q.sql); err != nil {
+			log.Printf("cleanup: failed to purge %s: %v", q.name, err)
+		}
+	}
 }
 
 func main() {
