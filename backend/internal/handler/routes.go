@@ -80,6 +80,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.PUT("/servers/:id", serverHandler.Update)
 		api.DELETE("/servers/:id", serverHandler.Delete)
 		api.POST("/servers/:id/restart-xray", serverHandler.RestartXray)
+		api.POST("/servers/:id/sync-xray", serverHandler.SyncXray)
 
 		// 账号管理
 		accountHandler := NewAccountHandler(db.DB)

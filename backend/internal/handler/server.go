@@ -9,18 +9,23 @@ import (
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
+	"v2ray-dash/backend/internal/service"
 	"v2ray-dash/backend/internal/ssh"
 )
 
 type ServerHandler struct {
-	repo     *repository.ServerRepository
-	logRepo  *repository.LogRepository
+	repo       *repository.ServerRepository
+	logRepo    *repository.LogRepository
+	accountSvc *service.AccountService
 }
 
 func NewServerHandler(db *sql.DB) *ServerHandler {
+	accountRepo := repository.NewAccountRepository(db)
+	serverRepo := repository.NewServerRepository(db)
 	return &ServerHandler{
-		repo:    repository.NewServerRepository(db),
-		logRepo: repository.NewLogRepository(db),
+		repo:       serverRepo,
+		logRepo:    repository.NewLogRepository(db),
+		accountSvc: service.NewAccountService(accountRepo, serverRepo),
 	}
 }
 
@@ -118,6 +123,29 @@ func (h *ServerHandler) RestartXray(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "xray已重启"})
+}
+
+func (h *ServerHandler) SyncXray(c *gin.Context) {
+	id := c.Param("id")
+	server, err := h.repo.GetByIDForInstall(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "server not found"})
+		return
+	}
+
+	var auth ssh.SSHAuth
+	if server.SSHKeyType == "password" {
+		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
+	} else {
+		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
+	}
+
+	if err := h.accountSvc.SyncAllToRemote(id, auth); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("同步失败: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "同步成功"})
 }
 
 func (h *ServerHandler) Delete(c *gin.Context) {
