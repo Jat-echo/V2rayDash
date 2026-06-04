@@ -1,9 +1,19 @@
 import { useState, useEffect, useRef } from 'react'
-import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented } from 'antd'
+import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented, Tabs, Spin, Checkbox } from 'antd'
 import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined } from '@ant-design/icons'
-import { serverAPI, accountAPI, logAPI, Server, Account, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
+import { serverAPI, accountAPI, logAPI, subscriptionAPI, Server, Account, Subscription, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
+
+function getSubAssignStatus(
+  sub: Subscription,
+  serverId: string,
+  serverAccounts: Account[],
+): 'assigned' | 'existing' | 'new' {
+  if (sub.accounts?.some(a => a.server_id === serverId)) return 'assigned'
+  if (serverAccounts.some(a => a.email === sub.name)) return 'existing'
+  return 'new'
+}
 
 // Convert ANSI escape codes to HTML with colors
 function ansiToHtml(text: string): string {
@@ -81,6 +91,12 @@ export default function ServerList() {
   const [timeRange, setTimeRange] = useState('1h')
   const [statuses, setStatuses] = useState<Map<string, NodeStatusResponse>>(new Map())
   const [restartingXray, setRestartingXray] = useState<string | null>(null)
+  const [accountModalTab, setAccountModalTab] = useState<string>('accounts')
+  const [assignSubs, setAssignSubs] = useState<Subscription[]>([])
+  const [assignServerAccounts, setAssignServerAccounts] = useState<Account[]>([])
+  const [assignLoading, setAssignLoading] = useState(false)
+  const [assignSelected, setAssignSelected] = useState<string[]>([])
+  const [assignSubmitting, setAssignSubmitting] = useState(false)
 
   const TIME_RANGES = [
     { label: '1小时', value: '1h' },
@@ -140,6 +156,46 @@ export default function ServerList() {
       setServers([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadAssignData = async () => {
+    if (!selectedServerForAccounts) return
+    setAssignLoading(true)
+    try {
+      const [subs, serverAccs] = await Promise.all([
+        subscriptionAPI.listFull(),
+        accountAPI.listByServer(selectedServerForAccounts.id),
+      ])
+      setAssignSubs(subs || [])
+      setAssignServerAccounts(serverAccs || [])
+      setAssignSelected([])
+    } catch {
+      message.error('加载订阅数据失败')
+    } finally {
+      setAssignLoading(false)
+    }
+  }
+
+  const handleAssign = async () => {
+    if (!selectedServerForAccounts || assignSelected.length === 0) return
+    setAssignSubmitting(true)
+    try {
+      const results = await Promise.allSettled(
+        assignSelected.map(id =>
+          subscriptionAPI.addAccount(id, { server_id: selectedServerForAccounts.id, auto_create: true })
+        )
+      )
+      const succeeded = results.filter(r => r.status === 'fulfilled').length
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed === 0) {
+        message.success(`成功分配 ${succeeded} 个订阅`)
+      } else {
+        message.warning(`${succeeded} 个成功，${failed} 个失败`)
+      }
+      loadAssignData()
+    } finally {
+      setAssignSubmitting(false)
     }
   }
 
@@ -642,51 +698,156 @@ export default function ServerList() {
 
       {/* Account Modal */}
       <Modal
-        title={`账号管理 - ${selectedServerForAccounts?.name || ''}`}
+        title={`账号管理 · ${selectedServerForAccounts?.name || ''}`}
         open={accountModalVisible}
-        onCancel={() => setAccountModalVisible(false)}
+        onCancel={() => { setAccountModalVisible(false); setAccountModalTab('accounts') }}
         width={750}
         footer={null}
       >
-        <div style={{ marginBottom: 16 }}>
-          <Space>
-            <Button type="primary" onClick={handleImportFromRemote}>从远程导入</Button>
-            <Button onClick={() => addAccountForm.resetFields()}>清空</Button>
-          </Space>
-        </div>
-
-        <Form form={addAccountForm} onFinish={handleAddAccount} layout="inline" style={{ marginBottom: 16 }}>
-          <Form.Item name="email" label="备注" rules={[{ required: true }]}>
-            <Input placeholder="账号名称" style={{ width: 200 }} />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit">确定</Button>
-          </Form.Item>
-        </Form>
-
-        <Table
-          dataSource={accounts}
-          rowKey="id"
-          size="small"
-          columns={[
-            { title: '备注', dataIndex: 'email' },
-            { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
-            { title: '协议', dataIndex: 'protocols', render: (p: string[]) => p?.map(v => <Tag key={v}>{getProtocolName(v)}</Tag>) },
-            { title: '状态', dataIndex: 'enabled', render: (v: boolean) => v ? '启用' : '禁用' },
+        <Tabs
+          activeKey={accountModalTab}
+          onChange={(key) => {
+            setAccountModalTab(key)
+            if (key === 'assign') loadAssignData()
+          }}
+          items={[
             {
-              title: '操作',
-              render: (_: any, record: Account) => (
-                <Space>
-                  <Popconfirm title="确定下载VLESS订阅?" onConfirm={() => handleDownloadSubscription(record.id, 'vless')}>
-                    <Button size="small">VLESS</Button>
-                  </Popconfirm>
-                  <Popconfirm title="确定下载Clash订阅?" onConfirm={() => handleDownloadSubscription(record.id, 'clash_meta')}>
-                    <Button size="small">Clash</Button>
-                  </Popconfirm>
-                  <Popconfirm title="确定删除?" onConfirm={() => handleDeleteAccount(record.id)}>
-                    <Button size="small" danger>删除</Button>
-                  </Popconfirm>
-                </Space>
+              key: 'accounts',
+              label: '账号',
+              children: (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    <Space>
+                      <Button type="primary" onClick={handleImportFromRemote}>从远程导入</Button>
+                      <Button onClick={() => addAccountForm.resetFields()}>清空</Button>
+                    </Space>
+                  </div>
+                  <Form form={addAccountForm} onFinish={handleAddAccount} layout="inline" style={{ marginBottom: 16 }}>
+                    <Form.Item name="email" label="备注" rules={[{ required: true }]}>
+                      <Input placeholder="账号名称" style={{ width: 200 }} />
+                    </Form.Item>
+                    <Form.Item>
+                      <Button type="primary" htmlType="submit">确定</Button>
+                    </Form.Item>
+                  </Form>
+                  <Table
+                    dataSource={accounts}
+                    rowKey="id"
+                    size="small"
+                    columns={[
+                      { title: '备注', dataIndex: 'email' },
+                      { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
+                      { title: '协议', dataIndex: 'protocols', render: (p: string[]) => p?.map(v => <Tag key={v}>{getProtocolName(v)}</Tag>) },
+                      { title: '状态', dataIndex: 'enabled', render: (v: boolean) => v ? '启用' : '禁用' },
+                      {
+                        title: '操作',
+                        render: (_: any, record: Account) => (
+                          <Space>
+                            <Popconfirm title="确定下载VLESS订阅?" onConfirm={() => handleDownloadSubscription(record.id, 'vless')}>
+                              <Button size="small">VLESS</Button>
+                            </Popconfirm>
+                            <Popconfirm title="确定下载Clash订阅?" onConfirm={() => handleDownloadSubscription(record.id, 'clash_meta')}>
+                              <Button size="small">Clash</Button>
+                            </Popconfirm>
+                            <Popconfirm title="确定删除?" onConfirm={() => handleDeleteAccount(record.id)}>
+                              <Button size="small" danger>删除</Button>
+                            </Popconfirm>
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
+                </>
+              ),
+            },
+            {
+              key: 'assign',
+              label: '关联订阅',
+              children: (
+                <Spin spinning={assignLoading}>
+                  {(() => {
+                    const serverId = selectedServerForAccounts?.id || ''
+                    const selectableSubs = assignSubs.filter(
+                      sub => getSubAssignStatus(sub, serverId, assignServerAccounts) !== 'assigned'
+                    )
+                    const allSelected = selectableSubs.length > 0 &&
+                      selectableSubs.every(s => assignSelected.includes(s.id))
+                    const someSelected = selectableSubs.some(s => assignSelected.includes(s.id)) && !allSelected
+                    return (
+                      <>
+                        <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f0f0f0' }}>
+                          <Checkbox
+                            checked={allSelected}
+                            indeterminate={someSelected}
+                            onChange={e => setAssignSelected(
+                              e.target.checked ? selectableSubs.map(s => s.id) : []
+                            )}
+                          >
+                            全选（{selectableSubs.length} 个可分配）
+                          </Checkbox>
+                        </div>
+                        <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                          {assignSubs.map(sub => {
+                            const status = getSubAssignStatus(sub, serverId, assignServerAccounts)
+                            const existingAcc = assignServerAccounts.find(a => a.email === sub.name)
+                            const disabled = status === 'assigned'
+                            return (
+                              <div
+                                key={sub.id}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '8px 0',
+                                  borderBottom: '1px solid #f0f0f0',
+                                }}
+                              >
+                                <Checkbox
+                                  disabled={disabled}
+                                  checked={assignSelected.includes(sub.id)}
+                                  onChange={e => setAssignSelected(
+                                    e.target.checked
+                                      ? [...assignSelected, sub.id]
+                                      : assignSelected.filter(id => id !== sub.id)
+                                  )}
+                                >
+                                  <span style={{ fontWeight: 500 }}>{sub.name}</span>
+                                  {sub.remark && (
+                                    <span style={{ color: '#999', marginLeft: 6, fontSize: 12 }}>
+                                      {sub.remark}
+                                    </span>
+                                  )}
+                                </Checkbox>
+                                {status === 'assigned' && <Tag>已分配</Tag>}
+                                {status === 'existing' && (
+                                  <Tag color="blue">已有账号 · {existingAcc?.email}</Tag>
+                                )}
+                                {status === 'new' && (
+                                  <Tag color="default">将新建 · {sub.name}</Tag>
+                                )}
+                              </div>
+                            )
+                          })}
+                          {assignSubs.length === 0 && !assignLoading && (
+                            <div style={{ textAlign: 'center', color: '#999', padding: '24px 0' }}>
+                              暂无订阅
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 16, textAlign: 'right' }}>
+                          <Button
+                            type="primary"
+                            loading={assignSubmitting}
+                            disabled={assignSelected.length === 0}
+                            onClick={handleAssign}
+                          >
+                            确认分配（已选 {assignSelected.length} 个）
+                          </Button>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </Spin>
               ),
             },
           ]}
