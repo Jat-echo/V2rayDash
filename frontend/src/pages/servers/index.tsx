@@ -160,7 +160,7 @@ export default function ServerList() {
   }
 
   const loadAssignData = async () => {
-    if (!selectedServerForAccounts) return
+    if (!selectedServerForAccounts || assignLoading) return
     setAssignLoading(true)
     try {
       const [subs, serverAccs] = await Promise.all([
@@ -193,7 +193,7 @@ export default function ServerList() {
       } else {
         message.warning(`${succeeded} 个成功，${failed} 个失败`)
       }
-      loadAssignData()
+      await loadAssignData()
     } finally {
       setAssignSubmitting(false)
     }
@@ -700,7 +700,13 @@ export default function ServerList() {
       <Modal
         title={`账号管理 · ${selectedServerForAccounts?.name || ''}`}
         open={accountModalVisible}
-        onCancel={() => { setAccountModalVisible(false); setAccountModalTab('accounts') }}
+        onCancel={() => {
+          setAccountModalVisible(false)
+          setAccountModalTab('accounts')
+          setAssignSubs([])
+          setAssignServerAccounts([])
+          setAssignSelected([])
+        }}
         width={750}
         footer={null}
       >
