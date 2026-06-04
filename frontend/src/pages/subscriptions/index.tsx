@@ -52,7 +52,9 @@ export default function SubscriptionList() {
         subscriptionAPI.listFull(),
         serverAPI.list(),
       ])
-      setSubscriptions(subs || [])
+      setSubscriptions((subs || []).sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ))
 
       const accountResults = await Promise.all(
         srvs.map(srv => accountAPI.listByServer(srv.id).then(accs => ({ srv, accs })))
@@ -318,6 +320,8 @@ export default function SubscriptionList() {
     {
       title: '流量使用',
       width: 200,
+      sorter: (a: SubscriptionWithAccounts, b: SubscriptionWithAccounts) =>
+        (a.traffic_used || 0) - (b.traffic_used || 0),
       render: (_: any, record: SubscriptionWithAccounts) => {
         const used = record.traffic_used || 0
         const limit = record.traffic_limit || 0
