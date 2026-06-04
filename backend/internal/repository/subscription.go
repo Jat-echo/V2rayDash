@@ -446,13 +446,19 @@ func (r *SubscriptionRepository) GetAccountTrafficLogs(subscriptionID, timeRange
 	return result, nil
 }
 
-// GetTrafficLogs returns traffic snapshots within the given time range (e.g. "1h", "1d", "7d")
+// GetTrafficLogs returns traffic snapshots within the given time range (e.g. "1h", "1d", "7d"),
+// bucketed by time range to limit returned point count.
 func (r *SubscriptionRepository) GetTrafficLogs(subscriptionID, timeRange string) ([]model.BandwidthPoint, error) {
 	interval := timeRangeToInterval(timeRange, "1 day")
+	bucket := timeRangeToBucketSeconds(timeRange)
 	rows, err := r.db.Query(`
-		SELECT traffic_bytes, recorded_at FROM subscription_traffic_logs
+		SELECT
+		  MAX(traffic_bytes) AS traffic_bytes,
+		  to_timestamp(floor(extract(epoch from recorded_at) / $3) * $3) AS bucket_time
+		FROM subscription_traffic_logs
 		WHERE subscription_id = $1 AND recorded_at > NOW() - $2::interval
-		ORDER BY recorded_at ASC`, subscriptionID, interval)
+		GROUP BY to_timestamp(floor(extract(epoch from recorded_at) / $3) * $3)
+		ORDER BY bucket_time ASC`, subscriptionID, interval, bucket)
 	if err != nil {
 		return nil, err
 	}

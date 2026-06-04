@@ -118,7 +118,7 @@ func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange st
 		  MAX(disk_percent)   AS disk_percent,
 		  MAX(bandwidth_in)   AS bandwidth_in,
 		  MAX(bandwidth_out)  AS bandwidth_out,
-		  MAX(v2ray_status)   AS v2ray_status
+		  (array_agg(v2ray_status ORDER BY reported_at DESC))[1] AS v2ray_status
 		FROM node_status
 		WHERE reported_at > NOW() - $2::interval
 		  AND ($1 = '' OR server_id = $1::uuid)
