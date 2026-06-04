@@ -82,12 +82,12 @@ export default function ServerList() {
   const [restartingXray, setRestartingXray] = useState<string | null>(null)
 
   const TIME_RANGES = [
-    { label: '1H', value: '1h' },
-    { label: '3H', value: '3h' },
-    { label: '6H', value: '6h' },
-    { label: '12H', value: '12h' },
+    { label: '1小时', value: '1h' },
+    { label: '3小时', value: '3h' },
+    { label: '6小时', value: '6h' },
     { label: '1天', value: '1d' },
-    { label: '3天', value: '3d' },
+    { label: '7天', value: '7d' },
+    { label: '30天', value: '30d' },
   ]
 
   // Preload plotly when page loads
