@@ -51,7 +51,7 @@ func (r *SubscriptionRepository) Create(req *model.CreateSubscriptionRequest) (*
 func (r *SubscriptionRepository) GetByID(id string) (*model.Subscription, error) {
 	var s model.Subscription
 	err := r.db.QueryRow(
-		`SELECT id, server_id, name, remark, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, COALESCE(server_id::text, ''), name, remark, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
 		 FROM subscriptions WHERE id = $1`,
 		id,
 	).Scan(&s.ID, &s.ServerID, &s.Name, &s.Remark, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
@@ -61,7 +61,7 @@ func (r *SubscriptionRepository) GetByID(id string) (*model.Subscription, error)
 func (r *SubscriptionRepository) GetByUUID(uuid string) (*model.Subscription, error) {
 	var s model.Subscription
 	err := r.db.QueryRow(
-		`SELECT id, server_id, name, remark, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, COALESCE(server_id::text, ''), name, remark, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
 		 FROM subscriptions WHERE uuid = $1`,
 		uuid,
 	).Scan(&s.ID, &s.ServerID, &s.Name, &s.Remark, &s.UUID, &s.Enable, &s.TrafficLimit, &s.TrafficUsed, &s.CreatedAt, &s.UpdatedAt)
@@ -70,7 +70,7 @@ func (r *SubscriptionRepository) GetByUUID(uuid string) (*model.Subscription, er
 
 func (r *SubscriptionRepository) List() ([]*model.Subscription, error) {
 	rows, err := r.db.Query(
-		`SELECT id, server_id, name, remark, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, COALESCE(server_id::text, ''), name, remark, uuid, enable, traffic_limit, traffic_used, created_at, updated_at
 		 FROM subscriptions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -271,7 +271,7 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 
 func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.SubscriptionWithAccounts, error) {
 	row := r.db.QueryRow(`
-		SELECT s.id, s.server_id, s.name, s.remark, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
+		SELECT s.id, COALESCE(s.server_id::text, ''), s.name, s.remark, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
 		       a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
 		       srv.name, srv.ip
