@@ -390,19 +390,29 @@ func (r *SubscriptionRepository) LogTraffic(subscriptionID string, trafficBytes 
 	return err
 }
 
-// GetAccountTrafficLogs returns per-account cumulative traffic snapshots for a subscription
+// GetAccountTrafficLogs returns per-account cumulative traffic snapshots for a subscription,
+// bucketed by time range to limit returned point count.
 func (r *SubscriptionRepository) GetAccountTrafficLogs(subscriptionID, timeRange string) ([]model.AccountTrafficSeries, error) {
 	interval := timeRangeToInterval(timeRange, "1 day")
+	bucket := timeRangeToBucketSeconds(timeRange)
+
 	rows, err := r.db.Query(`
-		SELECT a.id, a.email, srv.name, atl.traffic_bytes, atl.recorded_at
+		SELECT
+		  a.id,
+		  a.email,
+		  srv.name,
+		  MAX(atl.traffic_bytes) AS traffic_bytes,
+		  to_timestamp(floor(extract(epoch from atl.recorded_at) / $3) * $3) AS bucket_time
 		FROM subscription_accounts sa
 		JOIN accounts a ON sa.account_id = a.id
 		JOIN servers srv ON a.server_id = srv.id
 		JOIN account_traffic_logs atl ON atl.account_id = a.id
 		WHERE sa.subscription_id = $1
 		  AND atl.recorded_at > NOW() - $2::interval
-		ORDER BY a.id, atl.recorded_at ASC
-	`, subscriptionID, interval)
+		GROUP BY a.id, a.email, srv.name,
+		         to_timestamp(floor(extract(epoch from atl.recorded_at) / $3) * $3)
+		ORDER BY a.id, bucket_time ASC
+	`, subscriptionID, interval, bucket)
 	if err != nil {
 		return nil, err
 	}
