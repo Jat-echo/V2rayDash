@@ -97,6 +97,8 @@ export default function ServerList() {
   const [assignLoading, setAssignLoading] = useState(false)
   const [assignSelected, setAssignSelected] = useState<string[]>([])
   const [assignSubmitting, setAssignSubmitting] = useState(false)
+  const [deleteSelected, setDeleteSelected] = useState<string[]>([])
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   const TIME_RANGES = [
     { label: '1小时', value: '1h' },
@@ -196,6 +198,36 @@ export default function ServerList() {
       await loadAssignData()
     } finally {
       setAssignSubmitting(false)
+    }
+  }
+
+  const handleDeleteAssign = async () => {
+    if (!selectedServerForAccounts || deleteSelected.length === 0) return
+    setDeleteSubmitting(true)
+    const serverId = selectedServerForAccounts.id
+    try {
+      const results = await Promise.allSettled(
+        deleteSelected.map(subId => {
+          const sub = assignSubs.find(s => s.id === subId)
+          const acc = sub?.accounts?.find(a => a.server_id === serverId)
+          if (!acc) return Promise.reject(new Error('account not found'))
+          return Promise.all([
+            subscriptionAPI.removeAccount(subId, acc.id),
+            accountAPI.delete(acc.id),
+          ])
+        })
+      )
+      const succeeded = results.filter(r => r.status === 'fulfilled').length
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed === 0) {
+        message.success(`已删除 ${succeeded} 个关联`)
+      } else {
+        message.warning(`${succeeded} 个成功，${failed} 个失败`)
+      }
+      setDeleteSelected([])
+      await loadAssignData()
+    } finally {
+      setDeleteSubmitting(false)
     }
   }
 
@@ -706,6 +738,7 @@ export default function ServerList() {
           setAssignSubs([])
           setAssignServerAccounts([])
           setAssignSelected([])
+          setDeleteSelected([])
         }}
         width={750}
         footer={null}
