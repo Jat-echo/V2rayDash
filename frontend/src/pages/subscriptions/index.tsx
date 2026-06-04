@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card, Tag, Checkbox, Divider, Progress } from 'antd'
-import { CopyOutlined, QrcodeOutlined, HolderOutlined } from '@ant-design/icons'
+import { CopyOutlined, QrcodeOutlined, HolderOutlined, LinkOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -349,7 +349,7 @@ export default function SubscriptionList() {
       title: '操作',
       render: (_: any, record: SubscriptionWithAccounts) => (
         <Space>
-          <Button size="small" type="primary" onClick={() => handleGetLink(record.id)}>订阅链接</Button>
+          <Button size="small" type="primary" icon={<LinkOutlined />} title="订阅链接" onClick={() => handleGetLink(record.id)} />
           <Button
             size="small"
             icon={<CopyOutlined />}
@@ -363,8 +363,8 @@ export default function SubscriptionList() {
               }
             }}
           />
-          <Button size="small" onClick={() => openManageModal(record)}>编辑</Button>
-          <Button size="small" danger onClick={() => triggerDelete(record)}>删除</Button>
+          <Button size="small" icon={<EditOutlined />} title="编辑" onClick={() => openManageModal(record)} />
+          <Button size="small" danger icon={<DeleteOutlined />} title="删除" onClick={() => triggerDelete(record)} />
         </Space>
       ),
     },
