@@ -95,6 +95,13 @@ func (h *ServerHandler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, server)
 }
 
+func buildSSHAuth(server *model.Server) ssh.SSHAuth {
+	if server.SSHKeyType == "password" {
+		return &ssh.PasswordAuth{Password: server.SSHPassword}
+	}
+	return &ssh.KeyAuth{PrivateKey: server.SSHKey}
+}
+
 func (h *ServerHandler) RestartXray(c *gin.Context) {
 	id := c.Param("id")
 	server, err := h.repo.GetByIDForInstall(id)
@@ -103,14 +110,7 @@ func (h *ServerHandler) RestartXray(c *gin.Context) {
 		return
 	}
 
-	var auth ssh.SSHAuth
-	if server.SSHKeyType == "password" {
-		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
-	} else {
-		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
-	}
-
-	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, buildSSHAuth(server))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("SSH连接失败: %v", err)})
 		return
@@ -133,14 +133,7 @@ func (h *ServerHandler) SyncXray(c *gin.Context) {
 		return
 	}
 
-	var auth ssh.SSHAuth
-	if server.SSHKeyType == "password" {
-		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
-	} else {
-		auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
-	}
-
-	if err := h.accountSvc.SyncAllToRemote(id, auth); err != nil {
+	if err := h.accountSvc.SyncAllToRemote(id, buildSSHAuth(server)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("同步失败: %v", err)})
 		return
 	}

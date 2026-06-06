@@ -236,6 +236,11 @@ export default function ServerList() {
       } else {
         message.warning(`${succeeded} 个成功，${failed} 个失败`)
       }
+      try {
+        await serverAPI.syncXray(selectedServerForAccounts.id)
+      } catch {
+        message.warning('xray 同步失败，请手动点击同步按钮')
+      }
       setDeleteSelected([])
       await loadAssignData()
     } finally {
@@ -838,12 +843,15 @@ export default function ServerList() {
                 <Spin spinning={assignLoading}>
                   {(() => {
                     const serverId = selectedServerForAccounts?.id || ''
-                    const assignedSubs = assignSubs.filter(
-                      sub => getSubAssignStatus(sub, serverId, assignServerAccounts) === 'assigned'
-                    )
-                    const selectableSubs = assignSubs.filter(
-                      sub => getSubAssignStatus(sub, serverId, assignServerAccounts) !== 'assigned'
-                    )
+                    const assignedSubs: Subscription[] = []
+                    const selectableSubs: Subscription[] = []
+                    const statusCache = new Map<string, 'assigned' | 'existing' | 'new'>()
+                    for (const sub of assignSubs) {
+                      const status = getSubAssignStatus(sub, serverId, assignServerAccounts)
+                      statusCache.set(sub.id, status)
+                      if (status === 'assigned') assignedSubs.push(sub)
+                      else selectableSubs.push(sub)
+                    }
                     const allDeleteSelected = assignedSubs.length > 0 &&
                       assignedSubs.every(s => deleteSelected.includes(s.id))
                     const someDeleteSelected = assignedSubs.some(s => deleteSelected.includes(s.id)) && !allDeleteSelected
@@ -936,8 +944,10 @@ export default function ServerList() {
                           </div>
                           <div style={{ flex: 1, maxHeight: 280, overflowY: 'auto' }}>
                             {selectableSubs.map(sub => {
-                              const status = getSubAssignStatus(sub, serverId, assignServerAccounts)
-                              const existingAcc = assignServerAccounts.find(a => a.email === sub.name)
+                              const status = statusCache.get(sub.id)!
+                              const existingAcc = status === 'existing'
+                                ? assignServerAccounts.find(a => a.email === sub.name)
+                                : undefined
                               return (
                                 <div
                                   key={sub.id}
