@@ -650,16 +650,16 @@ export default function ServerList() {
       >
         <Form form={form} onFinish={handleAdd} layout="vertical">
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item name="ip" label="IP地址" rules={[{ required: true }]}>
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item name="ssh_port" label="SSH端口" initialValue={22}>
             <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="ssh_user" label="SSH用户" initialValue="root">
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item name="ssh_key_type" label="认证方式" initialValue="key">
             <Select onChange={(v) => setSshKeyType(v)}>
@@ -669,11 +669,11 @@ export default function ServerList() {
           </Form.Item>
           {sshKeyType === 'key' ? (
             <Form.Item name="ssh_key" label="SSH私钥">
-              <Input.TextArea rows={4} placeholder="粘贴SSH私钥内容" />
+              <Input.TextArea rows={4} placeholder="粘贴SSH私钥内容" autoComplete="off" />
             </Form.Item>
           ) : (
             <Form.Item name="ssh_password" label="SSH密码">
-              <Input.Password />
+              <Input.Password autoComplete="new-password" />
             </Form.Item>
           )}
           <Button type="primary" htmlType="submit">提交</Button>
@@ -1024,16 +1024,16 @@ export default function ServerList() {
       >
         <Form form={editForm} onFinish={handleEdit} layout="vertical">
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item name="ip" label="IP地址" rules={[{ required: true }]}>
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item name="ssh_port" label="SSH端口" rules={[{ required: true }]}>
             <InputNumber min={1} max={65535} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="ssh_user" label="SSH用户" rules={[{ required: true }]}>
-            <Input />
+            <Input autoComplete="off" />
           </Form.Item>
           <Form.Item name="ssh_key_type" label="认证方式" rules={[{ required: true }]}>
             <Select onChange={(v) => setEditSshKeyType(v)}>
@@ -1043,11 +1043,11 @@ export default function ServerList() {
           </Form.Item>
           {editSshKeyType === 'key' ? (
             <Form.Item name="ssh_key" label="SSH私钥">
-              <Input.TextArea rows={4} placeholder="粘贴SSH私钥内容" />
+              <Input.TextArea rows={4} placeholder="粘贴SSH私钥内容" autoComplete="off" />
             </Form.Item>
           ) : (
             <Form.Item name="ssh_password" label="SSH密码">
-              <Input.Password />
+              <Input.Password autoComplete="new-password" />
             </Form.Item>
           )}
           <Button type="primary" htmlType="submit">保存</Button>

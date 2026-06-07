@@ -434,13 +434,13 @@ export default function SubscriptionList() {
               },
             ]}
           >
-            <Input placeholder="例如: VIP用户" />
+            <Input placeholder="例如: VIP用户" autoComplete="off" />
           </Form.Item>
           <Form.Item name="remark" label="备注">
-            <Input placeholder="可选，中文备注，方便识别用户" />
+            <Input placeholder="可选，中文备注，方便识别用户" autoComplete="off" />
           </Form.Item>
           <Form.Item name="traffic_limit" label="流量限制(GB)">
-            <Input type="number" placeholder="留空表示无限流量" />
+            <Input type="number" placeholder="留空表示无限流量" autoComplete="off" />
           </Form.Item>
 
           <div style={{ marginBottom: 16 }}>
