@@ -1435,9 +1435,12 @@ func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) erro
 			return fmt.Errorf("upload config failed: %w", err)
 		}
 
-		// sudo cp 到实际配置路径，再重启 xray
+		// sudo cp 到实际配置路径，再重启 xray（兼容 xray 和 v2ray-agent 两种服务名）
 		var execOut strings.Builder
-		cmd := fmt.Sprintf("sudo cp %s %s && sudo systemctl restart xray", remoteTmp, configPath)
+		cmd := fmt.Sprintf(
+			"sudo cp %s %s && (sudo systemctl restart xray 2>/dev/null || sudo systemctl restart v2ray-agent)",
+			remoteTmp, configPath,
+		)
 		if err := client.Execute(cmd, &execOut, &execOut); err != nil {
 			return fmt.Errorf("apply config failed: %w", err)
 		}
