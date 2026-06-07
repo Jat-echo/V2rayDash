@@ -40,6 +40,7 @@ type CreateServerRequest struct {
 
 type UpdateServerRequest struct {
 	Name               *string  `json:"name"`
+	IP                 *string  `json:"ip"`
 	SSHPort            *int     `json:"ssh_port"`
 	SSHUser            *string  `json:"ssh_user"`
 	SSHKeyType         *string  `json:"ssh_key_type"`

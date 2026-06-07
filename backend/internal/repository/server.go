@@ -109,6 +109,11 @@ func (r *ServerRepository) Update(id string, req *model.UpdateServerRequest) (*m
 		args = append(args, *req.Name)
 		argNum++
 	}
+	if req.IP != nil {
+		setClauses = append(setClauses, fmt.Sprintf("ip = $%d", argNum))
+		args = append(args, *req.IP)
+		argNum++
+	}
 	if req.SSHPort != nil {
 		setClauses = append(setClauses, fmt.Sprintf("ssh_port = $%d", argNum))
 		args = append(args, *req.SSHPort)
