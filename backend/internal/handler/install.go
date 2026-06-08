@@ -25,6 +25,7 @@ type InstallRequest struct {
 	UUID       string   `json:"uuid"`
 	ServerName string   `json:"server_name"`
 	Protocols  []string `json:"protocols"`
+	Port       int      `json:"port"`
 }
 
 func NewInstallHandler(scriptPath string, serverRepo *repository.ServerRepository, accountRepo *repository.AccountRepository, settingRepo *repository.SettingRepository) *InstallHandler {
@@ -101,6 +102,7 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 		UUID:             req.UUID,
 		ServerName:       req.ServerName,
 		Protocols:        req.Protocols,
+		Port:             req.Port,
 		ServerID:         serverID,
 		ControlCenterURL: controlCenterURL,
 		InstallAgent:     true,

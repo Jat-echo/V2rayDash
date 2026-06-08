@@ -65,6 +65,7 @@ const defaultConfig = {
   core: 'xray-core',
   uuid: '',
   protocols: ['vless_reality_vision'],
+  port: 0,
 }
 
 export default function ServerList() {
@@ -349,6 +350,7 @@ export default function ServerList() {
         core: installConfig.core,
         uuid: installConfig.uuid,
         protocols: installConfig.protocols,
+        port: installConfig.port || 0,
       })
     }).then(response => {
       if (!response.ok) {
@@ -716,6 +718,18 @@ export default function ServerList() {
               value={installConfig.uuid}
               onChange={(e) => setInstallConfig({ ...installConfig, uuid: e.target.value })}
               placeholder="自动生成"
+              autoComplete="off"
+            />
+          </Form.Item>
+
+          <Form.Item label="端口 (留空随机分配)" extra="建议填 443">
+            <InputNumber
+              min={1}
+              max={65535}
+              value={installConfig.port || undefined}
+              onChange={(v) => setInstallConfig({ ...installConfig, port: v || 0 })}
+              placeholder="随机"
+              style={{ width: '100%' }}
             />
           </Form.Item>
 

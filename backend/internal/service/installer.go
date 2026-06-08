@@ -24,6 +24,7 @@ type InstallConfig struct {
 	Core            string // "xray-core" or "sing-box"
 	UUID            string
 	ServerName      string // Reality SNI
+	Port            int    // 监听端口，0 表示由脚本随机分配
 	Protocols       []string
 	ServerID        string // 服务器ID，用于Agent
 	ControlCenterURL string // 控制中心URL
@@ -110,6 +111,11 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 	// UUID
 	if config.UUID != "" {
 		args = append(args, fmt.Sprintf("--uuid %s", config.UUID))
+	}
+
+	// 端口
+	if config.Port > 0 {
+		args = append(args, fmt.Sprintf("--port %d", config.Port))
 	}
 
 	// Reality 服务器名称
@@ -246,6 +252,9 @@ func (i *Installer) InstallStreaming(w io.Writer, flusher http.Flusher, config *
 	}
 	if config.UUID != "" {
 		args = append(args, fmt.Sprintf("--uuid %s", config.UUID))
+	}
+	if config.Port > 0 {
+		args = append(args, fmt.Sprintf("--port %d", config.Port))
 	}
 	if config.ServerName != "" {
 		args = append(args, fmt.Sprintf("--server-name %s", config.ServerName))
