@@ -253,7 +253,7 @@ async function loadReleases(force = false): Promise<{ data: Record<string, Relea
   const results = await Promise.all(githubClients.map(c => fetchRelease(c)))
   const data: Record<string, ReleaseInfo> = {}
   githubClients.forEach((c, i) => { data[c.repo!] = results[i] })
-  saveCache(data)
+  try { saveCache(data) } catch { /* quota exceeded — skip caching */ }
   return { data, fetchedAt: Date.now() }
 }
 
@@ -448,7 +448,7 @@ export default function ClientDownload() {
                         <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>获取失败</span>
                       ) : (
                         <span style={{ color: 'var(--morandi-dusty, #c9a9a6)', fontFamily: 'monospace', fontSize: 12 }}>
-                          {info?.version ?? '—'}
+                          {info?.version || '—'}
                         </span>
                       )}
                     </td>
