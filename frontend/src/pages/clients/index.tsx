@@ -257,58 +257,100 @@ async function loadReleases(force = false): Promise<{ data: Record<string, Relea
   return { data, fetchedAt: Date.now() }
 }
 
-// ── 样式常量 ──────────────────────────────────────────────────────────────────
+// ── 平台配色系统（Morandi 调色板） ────────────────────────────────────────────
 
-const btnStyle: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.06)',
-  border: '1px solid rgba(255,255,255,0.12)',
-  color: 'rgba(255,255,255,0.82)',
-  padding: '2px 12px',
-  borderRadius: 4,
-  textDecoration: 'none',
-  fontSize: 12,
-  display: 'inline-block',
-  whiteSpace: 'nowrap',
+const PLATFORM_THEME = {
+  windows: { bg: 'rgba(157,180,192,0.12)', text: '#4E7A8A', border: 'rgba(157,180,192,0.4)' },
+  macos:   { bg: 'rgba(180,167,199,0.12)', text: '#6A5F85', border: 'rgba(180,167,199,0.4)' },
+  linux:   { bg: 'rgba(168,181,160,0.12)', text: '#526B4C', border: 'rgba(168,181,160,0.4)' },
+  android: { bg: 'rgba(196,131,106,0.12)', text: '#8B5640', border: 'rgba(196,131,106,0.4)' },
+  ios:     { bg: 'rgba(201,169,166,0.12)', text: '#8B5552', border: 'rgba(201,169,166,0.4)' },
+  github:  { bg: 'rgba(158,154,147,0.1)',  text: '#6B6760', border: 'rgba(158,154,147,0.35)' },
 }
 
-const dashStyle: React.CSSProperties = { color: 'rgba(255,255,255,0.18)', fontSize: 13 }
+const dashStyle: React.CSSProperties = {
+  color: 'var(--border-color)',
+  fontSize: 16,
+  lineHeight: 1,
+}
 
 const thStyle: React.CSSProperties = {
   textAlign: 'center',
-  padding: '10px 10px',
-  color: 'rgba(255,255,255,0.45)',
+  padding: '11px 8px',
+  color: 'var(--text-secondary)',
   fontWeight: 500,
-  fontSize: 13,
-  width: 90,
+  fontSize: 12,
+  width: 88,
+  background: 'var(--bg-secondary)',
+  borderBottom: '1px solid var(--border-color)',
 }
 
 // ── 子组件 ────────────────────────────────────────────────────────────────────
 
-function DownloadBtn({ url, label = '下载' }: { url: string; label?: string }) {
+function DownloadBtn({
+  url,
+  label = '下载',
+  variant = 'github',
+}: {
+  url: string
+  label?: string
+  variant?: keyof typeof PLATFORM_THEME
+}) {
+  const t = PLATFORM_THEME[variant]
   return (
-    <a href={url} target="_blank" rel="noreferrer" style={btnStyle}>
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      style={{
+        display: 'inline-block',
+        padding: '3px 11px',
+        background: t.bg,
+        color: t.text,
+        border: `1px solid ${t.border}`,
+        borderRadius: 6,
+        fontSize: 12,
+        fontWeight: 500,
+        textDecoration: 'none',
+        whiteSpace: 'nowrap',
+        transition: 'opacity 0.15s',
+      }}
+    >
       {label}
     </a>
   )
 }
 
-function MacOSCell({ macos }: { macos?: MacOSAssets }) {
+function MacOSCell({ macos, error, releasesUrl }: { macos?: MacOSAssets; error?: boolean; releasesUrl?: string }) {
+  if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
   if (!macos?.intel && !macos?.apple) return <span style={dashStyle}>—</span>
-  // 同一 URL 说明是 universal 包，只显示一个按钮
   if (macos.intel && macos.apple && macos.intel === macos.apple) {
-    return <DownloadBtn url={macos.intel} />
+    return <DownloadBtn url={macos.intel} variant="macos" />
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-      {macos.intel && <DownloadBtn url={macos.intel} label="Intel" />}
-      {macos.apple && <DownloadBtn url={macos.apple} label="M芯片" />}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
+      {macos.intel && <DownloadBtn url={macos.intel} label="Intel" variant="macos" />}
+      {macos.apple && <DownloadBtn url={macos.apple} label="M 芯片" variant="macos" />}
     </div>
   )
 }
 
-function PlatformCell({ url, storeLabel }: { url?: string; storeLabel?: string }) {
+function PlatformCell({
+  url,
+  label,
+  variant,
+  error,
+  releasesUrl,
+}: {
+  url?: string
+  label?: string
+  variant: keyof typeof PLATFORM_THEME
+  error?: boolean
+  releasesUrl?: string
+}) {
+  if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
   if (!url) return <span style={dashStyle}>—</span>
-  return <DownloadBtn url={url} label={storeLabel ?? '下载'} />
+  return <DownloadBtn url={url} label={label ?? '下载'} variant={variant} />
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
@@ -373,29 +415,42 @@ export default function ClientDownload() {
     ? new Date(fetchedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
     : ''
 
+  const cardStyle: React.CSSProperties = {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    borderRadius: 12,
+    overflow: 'hidden',
+    boxShadow: 'var(--shadow-soft)',
+  }
+
+  const cardHeadStyle: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '14px 20px',
+    background: 'linear-gradient(135deg, var(--morandi-cream) 0%, var(--bg-secondary) 100%)',
+    borderBottom: '1px solid var(--border-color)',
+  }
+
   return (
-    <div style={{ maxWidth: 1000 }}>
-      {/* ── 表格区块 ── */}
-      <div style={{
-        background: 'var(--bg-card, rgba(255,255,255,0.03))',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8,
-        overflow: 'hidden',
-        marginBottom: 24,
-      }}>
-        {/* 表头行 */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px 16px',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-        }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>客户端下载</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+    <div style={{ maxWidth: 1040 }}>
+
+      {/* ── 页面标题 ── */}
+      <div className="page-header">
+        <h1>客户端下载</h1>
+        <p>主流 Clash 系代理客户端，版本信息每日自动更新</p>
+      </div>
+
+      {/* ── 下载表格 ── */}
+      <div style={{ ...cardStyle, marginBottom: 20 }}>
+        <div style={cardHeadStyle}>
+          <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>
+            客户端列表
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {fetchedAt && (
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
-                版本缓存至 {cacheTimeStr}
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                缓存至 {cacheTimeStr}
               </span>
             )}
             <Button
@@ -403,22 +458,28 @@ export default function ClientDownload() {
               icon={<ReloadOutlined />}
               loading={loading}
               onClick={handleRefresh}
-              style={{ fontSize: 12 }}
             >
-              刷新
+              刷新版本
             </Button>
           </div>
         </div>
 
-        {/* 表格 */}
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
             <thead>
-              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <th style={{ textAlign: 'left', padding: '10px 16px', color: 'rgba(255,255,255,0.45)', fontWeight: 500, fontSize: 13 }}>
+              <tr>
+                <th style={{
+                  textAlign: 'left',
+                  padding: '11px 20px',
+                  color: 'var(--text-secondary)',
+                  fontWeight: 500,
+                  fontSize: 12,
+                  background: 'var(--bg-secondary)',
+                  borderBottom: '1px solid var(--border-color)',
+                }}>
                   客户端
                 </th>
-                <th style={{ ...thStyle, width: 80 }}>版本</th>
+                <th style={{ ...thStyle, width: 82 }}>版本</th>
                 <th style={thStyle}>🪟 Windows</th>
                 <th style={thStyle}>🍎 macOS</th>
                 <th style={thStyle}>🐧 Linux</th>
@@ -431,70 +492,80 @@ export default function ClientDownload() {
                 const info = client.repo ? releases[client.repo] : undefined
                 const isLast = idx === CLIENT_LIST.length - 1
                 return (
-                  <tr key={client.name} style={{ borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,0.05)' }}>
+                  <tr
+                    key={client.name}
+                    style={{
+                      borderBottom: isLast ? 'none' : '1px solid var(--border-color)',
+                      transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(201,169,166,0.04)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                  >
                     {/* 名称 + 简介 */}
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{client.name}</div>
-                      <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>{client.description}</div>
+                    <td style={{ padding: '13px 20px' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 2 }}>
+                        {client.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {client.description}
+                      </div>
                     </td>
 
                     {/* 版本 */}
-                    <td style={{ textAlign: 'center', padding: '12px 10px' }}>
+                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
                       {client.source === 'appstore' ? (
-                        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>App Store</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>App Store</span>
                       ) : loading && !info ? (
                         <Spin size="small" />
                       ) : info?.error ? (
-                        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>获取失败</span>
+                        <span style={{ fontSize: 11, color: 'var(--morandi-terracotta)' }}>获取失败</span>
                       ) : (
-                        <span style={{ color: 'var(--morandi-dusty, #c9a9a6)', fontFamily: 'monospace', fontSize: 12 }}>
+                        <span style={{
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: 'var(--morandi-dusty-rose)',
+                          background: 'rgba(201,169,166,0.1)',
+                          border: '1px solid rgba(201,169,166,0.25)',
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          display: 'inline-block',
+                        }}>
                           {info?.version || '—'}
                         </span>
                       )}
                     </td>
 
                     {/* Windows */}
-                    <td style={{ textAlign: 'center', padding: '12px 10px' }}>
-                      {info?.error
-                        ? <DownloadBtn url={info.releasesUrl} label="GitHub ↗" />
-                        : <PlatformCell url={info?.assets.windows} />
-                      }
+                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
+                      <PlatformCell url={info?.assets.windows} variant="windows" error={info?.error} releasesUrl={info?.releasesUrl} />
                     </td>
 
                     {/* macOS */}
-                    <td style={{ textAlign: 'center', padding: '12px 10px' }}>
-                      {info?.error
-                        ? <DownloadBtn url={info.releasesUrl} label="GitHub ↗" />
-                        : <MacOSCell macos={info?.assets.macos} />
-                      }
+                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
+                      <MacOSCell macos={info?.assets.macos} error={info?.error} releasesUrl={info?.releasesUrl} />
                     </td>
 
                     {/* Linux */}
-                    <td style={{ textAlign: 'center', padding: '12px 10px' }}>
-                      {info?.error
-                        ? <DownloadBtn url={info.releasesUrl} label="GitHub ↗" />
-                        : <PlatformCell url={info?.assets.linux} />
-                      }
+                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
+                      <PlatformCell url={info?.assets.linux} variant="linux" error={info?.error} releasesUrl={info?.releasesUrl} />
                     </td>
 
                     {/* Android */}
-                    <td style={{ textAlign: 'center', padding: '12px 10px' }}>
-                      {info?.error
-                        ? <DownloadBtn url={info.releasesUrl} label="GitHub ↗" />
-                        : <PlatformCell url={info?.assets.android} />
-                      }
+                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
+                      <PlatformCell url={info?.assets.android} variant="android" error={info?.error} releasesUrl={info?.releasesUrl} />
                     </td>
 
                     {/* iOS */}
-                    <td style={{ textAlign: 'center', padding: '12px 10px' }}>
+                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
                       {client.source === 'appstore' ? (
-                        <DownloadBtn url={client.storeUrl!} label="前往 ↗" />
-                      ) : info?.error ? (
-                        <DownloadBtn url={info.releasesUrl} label="GitHub ↗" />
+                        <DownloadBtn url={client.storeUrl!} label="前往 ↗" variant="ios" />
                       ) : (
                         <PlatformCell
                           url={info?.assets.ios ?? client.iosStoreUrl}
-                          storeLabel={client.iosStoreUrl ? '前往 ↗' : '下载'}
+                          label={client.iosStoreUrl ? '前往 ↗' : '下载'}
+                          variant="ios"
+                          error={info?.error}
+                          releasesUrl={info?.releasesUrl}
                         />
                       )}
                     </td>
@@ -507,48 +578,50 @@ export default function ClientDownload() {
       </div>
 
       {/* ── Linux 服务器安装区块 ── */}
-      <div style={{
-        background: 'var(--bg-card, rgba(255,255,255,0.03))',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8,
-        overflow: 'hidden',
-      }}>
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.08)', fontWeight: 600, fontSize: 14 }}>
-          🖥️ Linux 服务器 — 一键安装 Mihomo
-        </div>
-        <div style={{ padding: 16 }}>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 14 }}>
-            在服务器上执行以下命令，自动安装 Mihomo 代理服务并配置每日订阅更新
+      <div style={cardStyle}>
+        <div style={cardHeadStyle}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', marginBottom: 2 }}>
+              Linux 服务器安装
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              一键安装 Mihomo 代理服务，自动配置每日订阅更新
+            </div>
           </div>
+        </div>
 
+        <div style={{ padding: '16px 20px' }}>
           {/* 订阅选择 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', whiteSpace: 'nowrap' }}>选择订阅</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 500 }}>
+              选择订阅
+            </span>
             <Select
-              size="small"
-              style={{ minWidth: 200 }}
+              style={{ minWidth: 220 }}
               placeholder="选择订阅以预填地址"
               value={selectedSubId}
               onChange={handleSubChange}
               options={subscriptions.map(s => ({ value: s.id, label: s.name }))}
             />
-            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>订阅 URL 仅在本地使用，不上传</span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              订阅 URL 仅在本地生成，不上传
+            </span>
           </div>
 
           {/* 命令块 */}
           <div style={{ position: 'relative' }}>
             <pre style={{
-              background: '#0c0c0c',
-              border: '1px solid rgba(255,255,255,0.07)',
-              borderRadius: 6,
-              padding: '14px 16px',
-              fontFamily: "'Courier New', monospace",
-              fontSize: 12,
-              color: '#c9d1d9',
-              lineHeight: 1.8,
+              background: 'var(--bg-sidebar)',
+              borderRadius: 8,
+              padding: '14px 48px 14px 18px',
+              fontFamily: "'Courier New', 'Noto Sans SC', monospace",
+              fontSize: 12.5,
+              color: 'var(--morandi-cream)',
+              lineHeight: 1.9,
               margin: 0,
               overflowX: 'auto',
               whiteSpace: 'pre',
+              border: '1px solid rgba(255,255,255,0.06)',
             }}>
               {installCmd}
             </pre>
@@ -557,16 +630,30 @@ export default function ClientDownload() {
               icon={<CopyOutlined />}
               onClick={handleCopy}
               loading={copying}
-              style={{ position: 'absolute', top: 8, right: 8, fontSize: 11 }}
+              style={{
+                position: 'absolute',
+                top: 10,
+                right: 10,
+                background: 'rgba(201,169,166,0.15)',
+                borderColor: 'rgba(201,169,166,0.3)',
+                color: 'var(--morandi-dusty-rose)',
+              }}
             >
               复制
             </Button>
           </div>
 
           {/* 直连提示 */}
-          <div style={{ marginTop: 10, fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
             服务器可直连 GitHub？去掉 gh-proxy 前缀并加{' '}
-            <code style={{ background: 'rgba(255,255,255,0.05)', padding: '1px 5px', borderRadius: 3, color: 'rgba(255,255,255,0.5)' }}>
+            <code style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              padding: '1px 6px',
+              borderRadius: 4,
+              color: 'var(--text-secondary)',
+              fontSize: 11,
+            }}>
               --no-github-proxy
             </code>
           </div>
