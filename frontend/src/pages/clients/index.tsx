@@ -152,6 +152,72 @@ const CLIENT_LIST: ClientConfig[] = [
   },
 ]
 
+// ── Asset 匹配 ────────────────────────────────────────────────────────────────
+
+function parseAssets(
+  rawAssets: Array<{ name: string; browser_download_url: string }>,
+  patterns: AssetPatterns,
+): ResolvedAssets {
+  const find = (re: RegExp) =>
+    rawAssets.find(a => re.test(a.name))?.browser_download_url
+
+  const result: ResolvedAssets = {}
+
+  if (patterns.windows) {
+    const url = find(patterns.windows)
+    if (url) result.windows = url
+  }
+
+  // macOS: universal 作为 Intel 和 M芯片的 fallback
+  const universalUrl = patterns.macosUniversal ? find(patterns.macosUniversal) : undefined
+  const intelUrl = patterns.macosIntel ? find(patterns.macosIntel) : undefined
+  const appleUrl = patterns.macosApple ? find(patterns.macosApple) : undefined
+  const resolvedIntel = intelUrl ?? universalUrl
+  const resolvedApple = appleUrl ?? universalUrl
+  if (resolvedIntel || resolvedApple) {
+    result.macos = { intel: resolvedIntel, apple: resolvedApple }
+  }
+
+  if (patterns.linux) {
+    const url = find(patterns.linux)
+    if (url) result.linux = url
+  }
+
+  if (patterns.android) {
+    const url = find(patterns.android)
+    if (url) result.android = url
+  }
+
+  if (patterns.ios) {
+    const url = find(patterns.ios)
+    if (url) result.ios = url
+  }
+
+  return result
+}
+
+// ── GitHub API ────────────────────────────────────────────────────────────────
+
+async function fetchRelease(client: ClientConfig): Promise<ReleaseInfo> {
+  const releasesUrl = `https://github.com/${client.repo}/releases`
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${client.repo}/releases/latest`,
+      { headers: { Accept: 'application/vnd.github+json' } },
+    )
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const json = await res.json()
+    const resolved = client.patterns
+      ? parseAssets(json.assets ?? [], client.patterns)
+      : {}
+    // GitHub 客户端且有 iosStoreUrl：iOS 下载链接用 App Store
+    if (client.iosStoreUrl) resolved.ios = client.iosStoreUrl
+    return { version: json.tag_name ?? '', assets: resolved, releasesUrl }
+  } catch {
+    return { version: '', assets: {}, releasesUrl, error: true }
+  }
+}
+
 export default function ClientDownload() {
   return <div>placeholder</div>
 }
