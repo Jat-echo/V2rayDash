@@ -112,22 +112,44 @@ TTL: 86400000 ms（1 天）
 
 ## 7. UI 设计
 
-**布局：** 单张表格，列为「客户端 / 最新版本 / 下载」
+### 7.1 客户端下载表格
 
-**下载列：** 每个平台一个按钮，点击直接下载（GitHub 客户端）或新标签打开（App Store）
+**列结构：** 客户端（含简介）/ 版本 / 🪟 Windows / 🍎 macOS / 🐧 Linux / 🤖 Android / 📱 iOS
+
+每个平台独立成列，对齐展示。有下载链接的单元格显示「下载」按钮（直接触发文件下载），不支持的平台显示「—」，App Store 客户端显示「前往 ↗」（新标签打开）。
 
 **状态展示：**
 - 加载中：版本列显示 spin 动画
-- 成功：显示版本号（如 `v2.2.3`）
+- 成功：显示版本号（如 `v2.2.3`，monospace 字体）
 - App Store 客户端：版本列显示「App Store」灰色文字
-- 已停更客户端：版本列显示「已停更」灰色文字，仍提供最后版本下载（本期无已停更客户端）
-- 获取失败：显示「获取失败」+ 「前往 GitHub ↗」链接
+- 获取失败：版本列显示「获取失败」，下载列显示「前往 GitHub ↗」
 
 **右上角：**
 - 缓存时间：「版本数据缓存至 YYYY-MM-DD HH:mm」
-- 「刷新」按钮（手动强制更新）
+- 「刷新」按钮（清除缓存，重新拉取）
 
-**样式：** 跟随现有 Ant Design + CSS 变量主题，不引入新依赖
+### 7.2 Linux 服务器安装区块
+
+位于表格下方，独立卡片。
+
+**交互流程：**
+1. 下拉选择器列出所有订阅（调用 `subscriptionAPI.list()`）
+2. 用户选中后调用 `subscriptionAPI.getLink(id)` 获取订阅 URL
+3. 将 URL 填入命令中的 `--sub` 参数位置，实时更新代码块
+4. `--secret` 保留占位符「你的面板密码」，由用户自行填写
+5. 「复制」按钮复制完整命令到剪贴板
+
+**展示的安装命令（默认含 gh-proxy）：**
+```bash
+curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/Jat-echo/InstallMihomo/main/install-mihomo.sh \
+  | sudo bash -s -- \
+      --sub '${订阅URL}' \
+      --secret '你的面板密码'
+```
+
+附注说明：服务器可直连 GitHub 时，去掉 gh-proxy 前缀并加 `--no-github-proxy`。
+
+**样式：** 跟随现有 Ant Design + CSS 变量主题，代码块使用深色背景，不引入新依赖
 
 ---
 
@@ -147,3 +169,4 @@ TTL: 86400000 ms（1 天）
 - 管理员在后台动态配置客户端列表
 - 显示 Changelog 或 Release Notes
 - 多架构下载选择（如 arm64 vs x64 分别展示）
+- Linux 服务器安装命令中 `--secret` 自动填入（密码属于运维配置，不从系统读取）
