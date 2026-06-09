@@ -81,13 +81,13 @@ interface ClientsCache {
 - `assets[].browser_download_url` → 下载地址，按 `assetPatterns` 匹配平台
 
 **Asset 匹配规则（默认，各客户端可覆盖）：**
-- Windows：`\.exe$` 或 `\.msi$`，排除 `arm`
-- macOS：`\.dmg$` 或 `darwin`，x64 优先
-- Linux：`\.AppImage$`，x86_64/amd64 优先
-- Android：`\.apk$`，排除 `arm64` 只保留通用包（或 arm64 包）
-- iOS：通过 `assets` 中含 `ipa` 或跳 App Store
-
-如果一个平台有多个匹配文件（如 arm64、x64），优先选 x64 / universal，其余作为备选不展示（保持简洁）。
+- Windows：`.exe` 或 `.msi`，排除 `arm`，取 x64/amd64 版
+- macOS Intel：`.dmg` 且包含 `x64` 或 `amd64` 或 `intel`
+- macOS M芯片：`.dmg` 且包含 `aarch64` 或 `arm64` 或 `m1`
+- macOS universal：`.dmg` 且包含 `universal`（同时作为 Intel 和 M芯片 的 fallback）
+- Linux：`.AppImage`，x86_64/amd64 优先
+- Android：`.apk`，优先 universal/arm64-v8a 包
+- iOS：App Store 直链，不匹配 asset
 
 ---
 
@@ -117,6 +117,8 @@ TTL: 86400000 ms（1 天）
 **列结构：** 客户端（含简介）/ 版本 / 🪟 Windows / 🍎 macOS / 🐧 Linux / 🤖 Android / 📱 iOS
 
 每个平台独立成列，对齐展示。有下载链接的单元格显示「下载」按钮（直接触发文件下载），不支持的平台显示「—」，App Store 客户端显示「前往 ↗」（新标签打开）。
+
+**macOS 架构区分：** macOS 列保持单列，单元格内垂直排列两个按钮「Intel」和「M芯片」，分别对应 x64 和 arm64 版本。若某客户端仅提供 universal 包（同时兼容两种架构），则只显示一个「下载」按钮。
 
 **状态展示：**
 - 加载中：版本列显示 spin 动画
