@@ -19,7 +19,7 @@
 | Mihomo | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `MetaCubeX/mihomo` |
 | Hiddify | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `hiddify/hiddify-app` |
 | ClashMetaForAndroid | 🟢 活跃 | GitHub | Android | `MetaCubeX/ClashMetaForAndroid` |
-| Clash for Android | 🔴 已停更 | GitHub | Android | `Kr328/ClashForAndroid` |
+| FlClash | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `chen08209/FlClash` |
 | ClashMi | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `KaringX/clashmi` |
 | Stash | 🟢 活跃 | App Store | iOS | — |
 | Shadowrocket | 🟢 活跃 | App Store | iOS | — |
@@ -120,7 +120,7 @@ TTL: 86400000 ms（1 天）
 - 加载中：版本列显示 spin 动画
 - 成功：显示版本号（如 `v2.2.3`）
 - App Store 客户端：版本列显示「App Store」灰色文字
-- 已停更客户端（Clash for Android）：版本列显示「已停更」灰色文字，仍提供最后版本下载
+- 已停更客户端：版本列显示「已停更」灰色文字，仍提供最后版本下载（本期无已停更客户端）
 - 获取失败：显示「获取失败」+ 「前往 GitHub ↗」链接
 
 **右上角：**
