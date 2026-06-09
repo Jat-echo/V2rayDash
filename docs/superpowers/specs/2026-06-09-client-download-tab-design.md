@@ -16,7 +16,7 @@
 | 客户端 | 维护状态 | 来源 | 平台 | GitHub Repo |
 |--------|----------|------|------|-------------|
 | Clash Verge Rev | 🟢 活跃 | GitHub | Windows / macOS / Linux | `clash-verge-rev/clash-verge-rev` |
-| Mihomo Party | 🔴 已停更 | GitHub | Windows / macOS / Linux | `mihomo-party-org/mihomo-party` |
+| Mihomo | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `MetaCubeX/mihomo` |
 | Hiddify | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `hiddify/hiddify-app` |
 | ClashMetaForAndroid | 🟢 活跃 | GitHub | Android | `MetaCubeX/ClashMetaForAndroid` |
 | Clash for Android | 🔴 已停更 | GitHub | Android | `Kr328/ClashForAndroid` |
@@ -120,7 +120,7 @@ TTL: 86400000 ms（1 天）
 - 加载中：版本列显示 spin 动画
 - 成功：显示版本号（如 `v2.2.3`）
 - App Store 客户端：版本列显示「App Store」灰色文字
-- 已停更客户端（Clash for Android、Mihomo Party）：版本列显示「已停更」灰色文字，仍提供最后版本下载
+- 已停更客户端（Clash for Android）：版本列显示「已停更」灰色文字，仍提供最后版本下载
 - 获取失败：显示「获取失败」+ 「前往 GitHub ↗」链接
 
 **右上角：**
