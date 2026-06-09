@@ -6,6 +6,7 @@ import ServerList from './pages/servers'
 import SubscriptionList from './pages/subscriptions'
 import Logs from './pages/logs'
 import Settings from './pages/settings'
+import ClientDownload from './pages/clients'
 import LoginPage from './pages/login'
 import SetupPage from './pages/setup'
 import { authAPI } from './services/api'
@@ -42,10 +43,19 @@ const SettingsIcon = () => (
   </svg>
 )
 
+const ClientIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="2" y="3" width="20" height="14" rx="2"/>
+    <path d="M8 21h8M12 17v4"/>
+    <path d="M9 10l2 2 4-4"/>
+  </svg>
+)
+
 const navItems = [
   { path: '/servers', label: '服务器', icon: <ServerIcon /> },
   { path: '/subscriptions', label: '订阅', icon: <SubIcon /> },
   { path: '/logs', label: '日志', icon: <LogIcon /> },
+  { path: '/clients', label: '客户端', icon: <ClientIcon /> },
   { path: '/settings', label: '设置', icon: <SettingsIcon /> },
 ]
 
@@ -172,6 +182,7 @@ function App() {
               <Route path="/servers" element={<ServerList />} />
               <Route path="/subscriptions" element={<SubscriptionList />} />
               <Route path="/logs" element={<Logs />} />
+              <Route path="/clients" element={<ClientDownload />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </Content>
