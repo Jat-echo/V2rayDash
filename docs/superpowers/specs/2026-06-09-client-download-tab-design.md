@@ -13,16 +13,16 @@
 
 ## 2. 客户端列表（静态配置）
 
-| 客户端 | 维护状态 | 来源 | 平台 | GitHub Repo |
-|--------|----------|------|------|-------------|
-| Clash Verge Rev | 🟢 活跃 | GitHub | Windows / macOS / Linux | `clash-verge-rev/clash-verge-rev` |
-| Mihomo | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `MetaCubeX/mihomo` |
-| Hiddify | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `hiddify/hiddify-app` |
-| ClashMetaForAndroid | 🟢 活跃 | GitHub | Android | `MetaCubeX/ClashMetaForAndroid` |
-| FlClash | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `chen08209/FlClash` |
-| ClashMi | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `KaringX/clashmi` |
-| Stash | 🟢 活跃 | App Store | iOS | — |
-| Shadowrocket | 🟢 活跃 | App Store | iOS | — |
+| 客户端 | 维护状态 | 来源 | 平台 | GitHub Repo | Stars |
+|--------|----------|------|------|-------------|-------|
+| Clash Verge Rev | 🟢 活跃 | GitHub | Windows / macOS / Linux | `clash-verge-rev/clash-verge-rev` | 124k |
+| FlClash | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `chen08209/FlClash` | 42k |
+| ClashMetaForAndroid | 🟢 活跃 | GitHub | Android | `MetaCubeX/ClashMetaForAndroid` | 41k |
+| Mihomo | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android | `MetaCubeX/mihomo` | 31k |
+| Hiddify | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `hiddify/hiddify-app` | 31k |
+| ClashMi | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `KaringX/clashmi` | 7k |
+| Stash | 🟢 活跃 | App Store | iOS | — | — |
+| Shadowrocket | 🟢 活跃 | App Store | iOS | — | — |
 
 App Store 客户端不拉版本，直接链到 App Store 页面。已停更客户端仍通过 GitHub API 拉取最后发布版本并提供下载。
 
