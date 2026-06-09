@@ -62,10 +62,10 @@ const CLIENT_LIST: ClientConfig[] = [
     repo: 'clash-verge-rev/clash-verge-rev',
     platforms: ['windows', 'macos', 'linux'],
     patterns: {
-      windows: /clash[\._]verge.*x64.*(\.exe|\.msi)$/i,
-      macosIntel: /clash[\._]verge.*x64\.dmg$/i,
-      macosApple: /clash[\._]verge.*aarch64\.dmg$/i,
-      linux: /clash[\._]verge.*amd64\.AppImage$/i,
+      windows: /clash[._-]verge.*x64.*(\.exe|\.msi)$/i,
+      macosIntel: /clash[._-]verge.*x64\.dmg$/i,
+      macosApple: /clash[._-]verge.*aarch64\.dmg$/i,
+      linux: /clash[._-]verge.*amd64\.AppImage$/i,
     },
   },
   {
