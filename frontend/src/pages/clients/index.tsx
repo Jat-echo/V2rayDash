@@ -57,6 +57,7 @@ interface ClientConfig {
 
 const CLIENT_LIST: ClientConfig[] = [
   {
+    // 实际文件名: Clash.Verge_2.5.1_x64-setup.exe / _x64.dmg / _aarch64.dmg / _amd64.AppImage
     name: 'Clash Verge Rev',
     description: '基于 Tauri 的跨平台代理客户端',
     source: 'github',
@@ -64,13 +65,14 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 124277,
     platforms: ['windows', 'macos', 'linux'],
     patterns: {
-      windows: /clash[._-]verge[._-]rev.*x64.*\.(exe|msi)$/i,
-      macosIntel: /clash[._-]verge[._-]rev.*x64.*\.dmg$/i,
-      macosApple: /clash[._-]verge[._-]rev.*(aarch64|arm64).*\.dmg$/i,
-      linux: /clash[._-]verge[._-]rev.*(amd64|x86_64).*\.AppImage$/i,
+      windows:    /Clash\.Verge_.*x64.*\.(exe|msi)$/i,
+      macosIntel: /Clash\.Verge_.*x64\.dmg$/i,
+      macosApple: /Clash\.Verge_.*(aarch64|arm64)\.dmg$/i,
+      linux:      /Clash\.Verge_.*(amd64|x86_64)\.AppImage$/i,
     },
   },
   {
+    // 实际文件名: FlClash-0.8.93-windows-amd64-setup.exe / -macos-amd64.dmg / -macos-arm64.dmg / -linux-amd64.AppImage / -android-arm64-v8a.apk
     name: 'FlClash',
     description: '基于 Flutter 的现代化跨平台客户端',
     source: 'github',
@@ -78,14 +80,15 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 41795,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows: /FlClash-.*windows.*(amd64|x64).*\.exe$/i,
-      macosIntel: /FlClash-.*macos.*(amd64|x64).*\.dmg$/i,
-      macosApple: /FlClash-.*macos.*arm64.*\.dmg$/i,
-      linux: /FlClash-.*linux.*(amd64|x64).*\.AppImage$/i,
-      android: /FlClash-.*android.*\.(apk)$/i,
+      windows:    /FlClash-.*windows-amd64.*\.exe$/i,
+      macosIntel: /FlClash-.*macos-amd64\.dmg$/i,
+      macosApple: /FlClash-.*macos-arm64\.dmg$/i,
+      linux:      /FlClash-.*linux-amd64\.AppImage$/i,
+      android:    /FlClash-.*android-arm64.*\.apk$/i,
     },
   },
   {
+    // 实际文件名: cmfa-2.11.30-meta-universal-release.apk
     name: 'ClashMetaForAndroid',
     description: 'Android 专属 Clash Meta 客户端',
     source: 'github',
@@ -97,6 +100,8 @@ const CLIENT_LIST: ClientConfig[] = [
     },
   },
   {
+    // 实际文件名: mihomo-windows-amd64-v1.19.27.zip / -darwin-amd64-v1.19.27.gz / -darwin-arm64-v1.19.27.gz / -linux-amd64-v1.19.27.gz / -android-arm64-v8-v1.19.27.gz
+    // 注意: 有大量 -v1-go120- 变体，需精确匹配不带 go 版本后缀的干净文件
     name: 'Mihomo',
     description: 'Clash Meta 核心代理引擎（命令行）',
     source: 'github',
@@ -104,14 +109,15 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 31128,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows: /mihomo-windows-amd64[^-].*\.(zip|exe)$/i,
-      macosIntel: /mihomo-darwin-amd64[^-].*\.gz$/i,
-      macosApple: /mihomo-darwin-arm64[^-].*\.gz$/i,
-      linux: /mihomo-linux-amd64[^-].*\.gz$/i,
-      android: /mihomo-android-arm64[^-].*\.gz$/i,
+      windows:    /mihomo-windows-amd64-v\d+\.\d+\.\d+\.zip$/i,
+      macosIntel: /mihomo-darwin-amd64-v\d+\.\d+\.\d+\.gz$/i,
+      macosApple: /mihomo-darwin-arm64-v\d+\.\d+\.\d+\.gz$/i,
+      linux:      /mihomo-linux-amd64-v\d+\.\d+\.\d+\.gz$/i,
+      android:    /mihomo-android-arm64-v8-v\d+\.\d+\.\d+\.gz$/i,
     },
   },
   {
+    // 实际文件名: Hiddify-Windows-Setup-x64.exe / Hiddify-MacOS.dmg（通用包，无架构后缀）/ Hiddify-Linux-x64-AppImage.AppImage / Hiddify-Android-universal.apk
     name: 'Hiddify',
     description: '全平台开源代理客户端',
     source: 'github',
@@ -120,27 +126,25 @@ const CLIENT_LIST: ClientConfig[] = [
     platforms: ['windows', 'macos', 'linux', 'android', 'ios'],
     iosStoreUrl: 'https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532',
     patterns: {
-      windows: /hiddify.*windows.*(setup|installer)?.*x64.*\.exe$/i,
-      macosIntel: /hiddify.*macos.*x64.*\.dmg$/i,
-      macosApple: /hiddify.*macos.*arm64.*\.dmg$/i,
-      linux: /hiddify.*linux.*x64.*\.AppImage$/i,
-      android: /hiddify.*android.*universal.*\.apk$/i,
+      windows:       /Hiddify-Windows-Setup-x64\.exe$/i,
+      macosUniversal: /Hiddify-MacOS\.dmg$/i,
+      linux:         /Hiddify-Linux-x64-AppImage\.AppImage$/i,
+      android:       /Hiddify-Android-universal\.apk$/i,
     },
   },
   {
+    // 实际文件名: clashmi_1.0.24.1006_windows_x64.exe / _macos_universal.dmg / _linux_amd64.AppImage / _android_arm64-v8a.apk（无 iOS 直接下载）
     name: 'ClashMi',
     description: '全平台 Clash Meta 客户端',
     source: 'github',
     repo: 'KaringX/clashmi',
     stars: 7465,
-    platforms: ['windows', 'macos', 'linux', 'android', 'ios'],
+    platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows: /clashmi.*windows.*(amd64|x64).*\.exe$|clashmi.*\.exe$/i,
-      macosIntel: /clashmi.*(amd64|x64).*\.dmg$|clashmi.*macos.*(amd64|x64).*\.dmg$/i,
-      macosApple: /clashmi.*(arm64|aarch64).*\.dmg$|clashmi.*macos.*(arm64|aarch64).*\.dmg$/i,
-      linux: /clashmi.*linux.*\.AppImage$|clashmi.*\.AppImage$/i,
-      android: /clashmi.*\.apk$/i,
-      ios: /clashmi.*\.ipa$/i,
+      windows:       /clashmi.*windows.*x64\.exe$/i,
+      macosUniversal: /clashmi.*macos.*universal.*\.dmg$/i,
+      linux:         /clashmi.*linux.*amd64\.AppImage$/i,
+      android:       /clashmi.*android.*arm64.*\.apk$/i,
     },
   },
   {
@@ -404,7 +408,7 @@ export default function ClientDownload() {
 
   const cmdParts = [
     `      --sub '${subLink || '你的订阅地址'}'`,
-    `      --secret '你的面板密码'`,
+    ...(installPanel ? [`      --secret '你的面板密码'`] : []),
     `      --update-interval ${updateInterval}`,
     ...(!installPanel ? ['      --no-ui'] : []),
   ]
@@ -447,21 +451,11 @@ export default function ClientDownload() {
     borderBottom: '1px solid var(--border-color)',
   }
 
-  const optionRowStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '8px 0',
-    borderBottom: '1px solid var(--border-color)',
-    marginBottom: 4,
-  }
-
   const optionLabelStyle: React.CSSProperties = {
-    fontSize: 13,
+    fontSize: 12,
     color: 'var(--text-secondary)',
     fontWeight: 500,
-    width: 110,
-    flexShrink: 0,
+    whiteSpace: 'nowrap',
   }
 
   return (
@@ -630,42 +624,52 @@ export default function ClientDownload() {
         </div>
 
         <div style={{ padding: '16px 20px' }}>
-          {/* 选项区 */}
+          {/* 选项区 — 单行 */}
           <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 20,
+            flexWrap: 'wrap',
             background: 'var(--bg-secondary)',
             borderRadius: 8,
-            padding: '12px 16px',
+            padding: '10px 14px',
             marginBottom: 14,
             border: '1px solid var(--border-color)',
           }}>
-            {/* 订阅选择 */}
-            <div style={optionRowStyle}>
+            {/* 订阅链接 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={optionLabelStyle}>订阅链接</span>
               <Select
-                style={{ minWidth: 220 }}
-                placeholder="选择订阅以预填地址"
+                showSearch
+                filterOption={(input, opt) =>
+                  (opt?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                style={{ minWidth: 180 }}
+                placeholder="选择或搜索订阅"
                 value={selectedSubId}
                 onChange={handleSubChange}
                 options={subscriptions.map(s => ({ value: s.id, label: s.name }))}
               />
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>仅在本地生成，不上传</span>
             </div>
 
-            {/* 自动更新间隔 */}
-            <div style={optionRowStyle}>
-              <span style={optionLabelStyle}>自动更新间隔</span>
+            <div style={{ width: 1, height: 20, background: 'var(--border-color)', flexShrink: 0 }} />
+
+            {/* 更新间隔 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={optionLabelStyle}>更新间隔</span>
               <Select
-                style={{ width: 140 }}
+                style={{ width: 120 }}
                 value={updateInterval}
                 onChange={setUpdateInterval}
                 options={INTERVAL_OPTIONS}
               />
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>定时重拉订阅并重启服务</span>
             </div>
 
-            {/* 安装控制面板 */}
-            <div style={{ ...optionRowStyle, borderBottom: 'none', paddingBottom: 0, marginBottom: 0 }}>
-              <span style={optionLabelStyle}>安装控制面板</span>
+            <div style={{ width: 1, height: 20, background: 'var(--border-color)', flexShrink: 0 }} />
+
+            {/* 控制面板 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={optionLabelStyle}>控制面板</span>
               <Switch
                 size="small"
                 checked={installPanel}
@@ -673,7 +677,7 @@ export default function ClientDownload() {
                 style={installPanel ? { background: 'var(--morandi-dusty-rose)' } : {}}
               />
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                {installPanel ? '安装 MetaCubeXD 面板（推荐）' : '跳过面板安装，仅安装核心'}
+                {installPanel ? 'MetaCubeXD' : '不安装'}
               </span>
             </div>
           </div>
