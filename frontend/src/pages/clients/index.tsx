@@ -1,7 +1,7 @@
 // frontend/src/pages/clients/index.tsx
 import React, { useState, useEffect, useCallback } from 'react'
-import { Select, Spin, Button, message } from 'antd'
-import { ReloadOutlined, CopyOutlined } from '@ant-design/icons'
+import { Select, Spin, Button, Switch, message } from 'antd'
+import { ReloadOutlined, CopyOutlined, WindowsOutlined, AppleOutlined, AndroidOutlined, MobileOutlined, StarOutlined } from '@ant-design/icons'
 import { subscriptionAPI, Subscription } from '../../services/api'
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
@@ -46,6 +46,7 @@ interface ClientConfig {
   description: string
   source: 'github' | 'appstore'
   repo?: string
+  stars?: number
   storeUrl?: string
   iosStoreUrl?: string
   platforms: Array<'windows' | 'macos' | 'linux' | 'android' | 'ios'>
@@ -60,12 +61,13 @@ const CLIENT_LIST: ClientConfig[] = [
     description: '基于 Tauri 的跨平台代理客户端',
     source: 'github',
     repo: 'clash-verge-rev/clash-verge-rev',
+    stars: 124277,
     platforms: ['windows', 'macos', 'linux'],
     patterns: {
-      windows: /clash[._-]verge.*x64.*(\.exe|\.msi)$/i,
-      macosIntel: /clash[._-]verge.*x64\.dmg$/i,
-      macosApple: /clash[._-]verge.*aarch64\.dmg$/i,
-      linux: /clash[._-]verge.*amd64\.AppImage$/i,
+      windows: /clash[._-]verge[._-]rev.*x64.*\.(exe|msi)$/i,
+      macosIntel: /clash[._-]verge[._-]rev.*x64.*\.dmg$/i,
+      macosApple: /clash[._-]verge[._-]rev.*(aarch64|arm64).*\.dmg$/i,
+      linux: /clash[._-]verge[._-]rev.*(amd64|x86_64).*\.AppImage$/i,
     },
   },
   {
@@ -73,13 +75,14 @@ const CLIENT_LIST: ClientConfig[] = [
     description: '基于 Flutter 的现代化跨平台客户端',
     source: 'github',
     repo: 'chen08209/FlClash',
+    stars: 41795,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows: /FlClash-.*windows-amd64.*\.exe$/i,
-      macosIntel: /FlClash-.*macos-amd64\.dmg$/i,
-      macosApple: /FlClash-.*macos-arm64\.dmg$/i,
-      linux: /FlClash-.*linux-amd64\.AppImage$/i,
-      android: /FlClash-.*android.*\.apk$/i,
+      windows: /FlClash-.*windows.*(amd64|x64).*\.exe$/i,
+      macosIntel: /FlClash-.*macos.*(amd64|x64).*\.dmg$/i,
+      macosApple: /FlClash-.*macos.*arm64.*\.dmg$/i,
+      linux: /FlClash-.*linux.*(amd64|x64).*\.AppImage$/i,
+      android: /FlClash-.*android.*\.(apk)$/i,
     },
   },
   {
@@ -87,6 +90,7 @@ const CLIENT_LIST: ClientConfig[] = [
     description: 'Android 专属 Clash Meta 客户端',
     source: 'github',
     repo: 'MetaCubeX/ClashMetaForAndroid',
+    stars: 40949,
     platforms: ['android'],
     patterns: {
       android: /cmfa-.*universal.*\.apk$/i,
@@ -97,13 +101,14 @@ const CLIENT_LIST: ClientConfig[] = [
     description: 'Clash Meta 核心代理引擎（命令行）',
     source: 'github',
     repo: 'MetaCubeX/mihomo',
+    stars: 31128,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows: /mihomo-windows-amd64-v.*\.zip$/i,
-      macosIntel: /mihomo-darwin-amd64-v.*\.gz$/i,
-      macosApple: /mihomo-darwin-arm64-v.*\.gz$/i,
-      linux: /mihomo-linux-amd64-v.*\.gz$/i,
-      android: /mihomo-android-arm64-v.*\.gz$/i,
+      windows: /mihomo-windows-amd64[^-].*\.(zip|exe)$/i,
+      macosIntel: /mihomo-darwin-amd64[^-].*\.gz$/i,
+      macosApple: /mihomo-darwin-arm64[^-].*\.gz$/i,
+      linux: /mihomo-linux-amd64[^-].*\.gz$/i,
+      android: /mihomo-android-arm64[^-].*\.gz$/i,
     },
   },
   {
@@ -111,14 +116,15 @@ const CLIENT_LIST: ClientConfig[] = [
     description: '全平台开源代理客户端',
     source: 'github',
     repo: 'hiddify/hiddify-app',
+    stars: 30517,
     platforms: ['windows', 'macos', 'linux', 'android', 'ios'],
     iosStoreUrl: 'https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532',
     patterns: {
-      windows: /Hiddify-Windows-Setup-x64\.exe$/i,
-      macosIntel: /Hiddify-MacOS-x64\.dmg$/i,
-      macosApple: /Hiddify-MacOS-arm64\.dmg$/i,
-      linux: /Hiddify-Linux-x64\.AppImage$/i,
-      android: /Hiddify-Android-universal\.apk$/i,
+      windows: /hiddify.*windows.*(setup|installer)?.*x64.*\.exe$/i,
+      macosIntel: /hiddify.*macos.*x64.*\.dmg$/i,
+      macosApple: /hiddify.*macos.*arm64.*\.dmg$/i,
+      linux: /hiddify.*linux.*x64.*\.AppImage$/i,
+      android: /hiddify.*android.*universal.*\.apk$/i,
     },
   },
   {
@@ -126,14 +132,15 @@ const CLIENT_LIST: ClientConfig[] = [
     description: '全平台 Clash Meta 客户端',
     source: 'github',
     repo: 'KaringX/clashmi',
+    stars: 7465,
     platforms: ['windows', 'macos', 'linux', 'android', 'ios'],
     patterns: {
-      windows: /\.exe$/i,
-      macosIntel: /(x64|amd64|intel).*\.dmg$|(\.dmg).*(x64|amd64|intel)/i,
-      macosApple: /(arm64|aarch64).*\.dmg$|(\.dmg).*(arm64|aarch64)/i,
-      linux: /\.AppImage$/i,
-      android: /\.apk$/i,
-      ios: /\.ipa$/i,
+      windows: /clashmi.*windows.*(amd64|x64).*\.exe$|clashmi.*\.exe$/i,
+      macosIntel: /clashmi.*(amd64|x64).*\.dmg$|clashmi.*macos.*(amd64|x64).*\.dmg$/i,
+      macosApple: /clashmi.*(arm64|aarch64).*\.dmg$|clashmi.*macos.*(arm64|aarch64).*\.dmg$/i,
+      linux: /clashmi.*linux.*\.AppImage$|clashmi.*\.AppImage$/i,
+      android: /clashmi.*\.apk$/i,
+      ios: /clashmi.*\.ipa$/i,
     },
   },
   {
@@ -151,6 +158,8 @@ const CLIENT_LIST: ClientConfig[] = [
     platforms: ['ios'],
   },
 ]
+
+const formatStars = (n: number) => n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 
 // ── Asset 匹配 ────────────────────────────────────────────────────────────────
 
@@ -268,92 +277,91 @@ const PLATFORM_THEME = {
   github:  { bg: 'rgba(158,154,147,0.1)',  text: '#6B6760', border: 'rgba(158,154,147,0.35)' },
 }
 
-const dashStyle: React.CSSProperties = {
-  color: 'var(--border-color)',
-  fontSize: 16,
-  lineHeight: 1,
-}
+const dashStyle: React.CSSProperties = { color: 'var(--border-color)', fontSize: 16 }
 
 const thStyle: React.CSSProperties = {
   textAlign: 'center',
-  padding: '11px 8px',
+  padding: '11px 6px',
   color: 'var(--text-secondary)',
   fontWeight: 500,
   fontSize: 12,
-  width: 88,
+  width: 84,
   background: 'var(--bg-secondary)',
   borderBottom: '1px solid var(--border-color)',
 }
 
+// Linux platform icon (no Ant Design equivalent)
+const LinuxIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ verticalAlign: 'middle' }}>
+    <path d="M12 2C8.686 2 6 4.686 6 7c0 1.548.75 2.918 1.894 3.789C6.74 11.625 6 13.22 6 15c0 1.306.37 2.52 1.006 3.553C5.804 19.353 5 20.576 5 22h14c0-1.424-.804-2.647-2.006-3.447A7.04 7.04 0 0019 15c0-1.78-.74-3.375-1.894-4.211A4.992 4.992 0 0018 7c0-2.314-2.686-5-6-5zm-1.5 6.25a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5zm3 0a1.25 1.25 0 110-2.5 1.25 1.25 0 010 2.5z"/>
+  </svg>
+)
+
 // ── 子组件 ────────────────────────────────────────────────────────────────────
 
 function DownloadBtn({
-  url,
-  label = '下载',
-  variant = 'github',
-}: {
-  url: string
-  label?: string
-  variant?: keyof typeof PLATFORM_THEME
-}) {
+  url, label = '下载', variant = 'github',
+}: { url: string; label?: string; variant?: keyof typeof PLATFORM_THEME }) {
   const t = PLATFORM_THEME[variant]
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      style={{
-        display: 'inline-block',
-        padding: '3px 11px',
-        background: t.bg,
-        color: t.text,
-        border: `1px solid ${t.border}`,
-        borderRadius: 6,
-        fontSize: 12,
-        fontWeight: 500,
-        textDecoration: 'none',
-        whiteSpace: 'nowrap',
-        transition: 'opacity 0.15s',
-      }}
-    >
+    <a href={url} target="_blank" rel="noreferrer" style={{
+      display: 'inline-block',
+      padding: '3px 10px',
+      background: t.bg,
+      color: t.text,
+      border: `1px solid ${t.border}`,
+      borderRadius: 6,
+      fontSize: 12,
+      fontWeight: 500,
+      textDecoration: 'none',
+      whiteSpace: 'nowrap',
+    }}>
       {label}
     </a>
   )
 }
 
-function MacOSCell({ macos, error, releasesUrl }: { macos?: MacOSAssets; error?: boolean; releasesUrl?: string }) {
+function MacOSCell({ macos, error, releasesUrl, declared }: {
+  macos?: MacOSAssets; error?: boolean; releasesUrl?: string; declared: boolean
+}) {
   if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
-  if (!macos?.intel && !macos?.apple) return <span style={dashStyle}>—</span>
+  if (!macos?.intel && !macos?.apple) {
+    if (declared && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" variant="github" />
+    return <span style={dashStyle}>—</span>
+  }
   if (macos.intel && macos.apple && macos.intel === macos.apple) {
     return <DownloadBtn url={macos.intel} variant="macos" />
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
       {macos.intel && <DownloadBtn url={macos.intel} label="Intel" variant="macos" />}
       {macos.apple && <DownloadBtn url={macos.apple} label="M 芯片" variant="macos" />}
     </div>
   )
 }
 
-function PlatformCell({
-  url,
-  label,
-  variant,
-  error,
-  releasesUrl,
-}: {
-  url?: string
-  label?: string
-  variant: keyof typeof PLATFORM_THEME
-  error?: boolean
-  releasesUrl?: string
+function PlatformCell({ url, label, variant, error, releasesUrl, declared }: {
+  url?: string; label?: string; variant: keyof typeof PLATFORM_THEME;
+  error?: boolean; releasesUrl?: string; declared: boolean
 }) {
   if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
-  if (!url) return <span style={dashStyle}>—</span>
+  if (!url) {
+    if (declared && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" variant="github" />
+    return <span style={dashStyle}>—</span>
+  }
   return <DownloadBtn url={url} label={label ?? '下载'} variant={variant} />
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
+
+const INTERVAL_OPTIONS = [
+  { value: '30m', label: '30 分钟' },
+  { value: '1h',  label: '1 小时' },
+  { value: '2h',  label: '2 小时' },
+  { value: '6h',  label: '6 小时' },
+  { value: '12h', label: '12 小时' },
+  { value: 'daily', label: '每天一次' },
+]
 
 export default function ClientDownload() {
   const [releases, setReleases] = useState<Record<string, ReleaseInfo>>({})
@@ -363,6 +371,8 @@ export default function ClientDownload() {
   const [selectedSubId, setSelectedSubId] = useState<string | undefined>()
   const [subLink, setSubLink] = useState<string>('')
   const [copying, setCopying] = useState(false)
+  const [updateInterval, setUpdateInterval] = useState('1h')
+  const [installPanel, setInstallPanel] = useState(true)
 
   const load = useCallback(async (force = false) => {
     setLoading(true)
@@ -380,10 +390,7 @@ export default function ClientDownload() {
     subscriptionAPI.list().then(list => setSubscriptions(list ?? []))
   }, [load])
 
-  const handleRefresh = () => {
-    clearCache()
-    load(true)
-  }
+  const handleRefresh = () => { clearCache(); load(true) }
 
   const handleSubChange = async (id: string) => {
     setSelectedSubId(id)
@@ -395,10 +402,18 @@ export default function ClientDownload() {
     }
   }
 
-  const installCmd = `curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/Jat-echo/InstallMihomo/main/install-mihomo.sh \\
-  | sudo bash -s -- \\
-      --sub '${subLink || '你的订阅地址'}' \\
-      --secret '你的面板密码'`
+  const cmdParts = [
+    `      --sub '${subLink || '你的订阅地址'}'`,
+    `      --secret '你的面板密码'`,
+    `      --update-interval ${updateInterval}`,
+    ...(!installPanel ? ['      --no-ui'] : []),
+  ]
+  const installCmd = [
+    'curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/Jat-echo/InstallMihomo/main/install-mihomo.sh \\',
+    '  | sudo bash -s -- \\',
+    ...cmdParts.slice(0, -1).map(p => p + ' \\'),
+    cmdParts[cmdParts.length - 1],
+  ].join('\n')
 
   const handleCopy = async () => {
     try {
@@ -432,8 +447,25 @@ export default function ClientDownload() {
     borderBottom: '1px solid var(--border-color)',
   }
 
+  const optionRowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 0',
+    borderBottom: '1px solid var(--border-color)',
+    marginBottom: 4,
+  }
+
+  const optionLabelStyle: React.CSSProperties = {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    fontWeight: 500,
+    width: 110,
+    flexShrink: 0,
+  }
+
   return (
-    <div style={{ maxWidth: 1040 }}>
+    <div style={{ maxWidth: 1060 }}>
 
       {/* ── 页面标题 ── */}
       <div className="page-header">
@@ -444,91 +476,94 @@ export default function ClientDownload() {
       {/* ── 下载表格 ── */}
       <div style={{ ...cardStyle, marginBottom: 20 }}>
         <div style={cardHeadStyle}>
-          <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>
-            客户端列表
-          </span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>客户端列表</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {fetchedAt && (
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                缓存至 {cacheTimeStr}
-              </span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>缓存至 {cacheTimeStr}</span>
             )}
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              loading={loading}
-              onClick={handleRefresh}
-            >
+            <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={handleRefresh}>
               刷新版本
             </Button>
           </div>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
               <tr>
                 <th style={{
-                  textAlign: 'left',
-                  padding: '11px 20px',
-                  color: 'var(--text-secondary)',
-                  fontWeight: 500,
-                  fontSize: 12,
-                  background: 'var(--bg-secondary)',
-                  borderBottom: '1px solid var(--border-color)',
-                }}>
-                  客户端
+                  textAlign: 'left', padding: '11px 16px',
+                  color: 'var(--text-secondary)', fontWeight: 500, fontSize: 12,
+                  background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)',
+                  width: 160,
+                }}>客户端</th>
+                <th style={{ ...thStyle, width: 60 }}>
+                  <StarOutlined style={{ fontSize: 12 }} />
                 </th>
-                <th style={{ ...thStyle, width: 82 }}>版本</th>
-                <th style={thStyle}>🪟 Windows</th>
-                <th style={thStyle}>🍎 macOS</th>
-                <th style={thStyle}>🐧 Linux</th>
-                <th style={thStyle}>🤖 Android</th>
-                <th style={thStyle}>📱 iOS</th>
+                <th style={{ ...thStyle, width: 80 }}>版本</th>
+                <th style={thStyle}>
+                  <WindowsOutlined style={{ fontSize: 13 }} />
+                  <div style={{ fontSize: 10, marginTop: 2, fontWeight: 400 }}>Windows</div>
+                </th>
+                <th style={thStyle}>
+                  <AppleOutlined style={{ fontSize: 13 }} />
+                  <div style={{ fontSize: 10, marginTop: 2, fontWeight: 400 }}>macOS</div>
+                </th>
+                <th style={thStyle}>
+                  <LinuxIcon />
+                  <div style={{ fontSize: 10, marginTop: 2, fontWeight: 400 }}>Linux</div>
+                </th>
+                <th style={thStyle}>
+                  <AndroidOutlined style={{ fontSize: 13 }} />
+                  <div style={{ fontSize: 10, marginTop: 2, fontWeight: 400 }}>Android</div>
+                </th>
+                <th style={thStyle}>
+                  <MobileOutlined style={{ fontSize: 13 }} />
+                  <div style={{ fontSize: 10, marginTop: 2, fontWeight: 400 }}>iOS</div>
+                </th>
               </tr>
             </thead>
             <tbody>
               {CLIENT_LIST.map((client, idx) => {
                 const info = client.repo ? releases[client.repo] : undefined
                 const isLast = idx === CLIENT_LIST.length - 1
+                const has = (p: typeof client.platforms[number]) => client.platforms.includes(p)
                 return (
                   <tr
                     key={client.name}
-                    style={{
-                      borderBottom: isLast ? 'none' : '1px solid var(--border-color)',
-                      transition: 'background 0.15s',
-                    }}
+                    style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-color)', transition: 'background 0.15s' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(201,169,166,0.04)')}
                     onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
-                    {/* 名称 + 简介 */}
-                    <td style={{ padding: '13px 20px' }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)', marginBottom: 2 }}>
-                        {client.name}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        {client.description}
-                      </div>
+                    {/* 名称（紧凑） */}
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{client.name}</div>
+                    </td>
+
+                    {/* Stars */}
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
+                      {client.stars ? (
+                        <span style={{ fontSize: 11, color: 'var(--morandi-sand)', fontWeight: 500 }}>
+                          {formatStars(client.stars)}
+                        </span>
+                      ) : <span style={dashStyle}>—</span>}
                     </td>
 
                     {/* 版本 */}
-                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
                       {client.source === 'appstore' ? (
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>App Store</span>
                       ) : loading && !info ? (
                         <Spin size="small" />
                       ) : info?.error ? (
-                        <span style={{ fontSize: 11, color: 'var(--morandi-terracotta)' }}>获取失败</span>
+                        <span style={{ fontSize: 11, color: 'var(--morandi-terracotta)' }}>失败</span>
                       ) : (
                         <span style={{
-                          fontSize: 11,
-                          fontFamily: 'monospace',
+                          fontSize: 11, fontFamily: 'monospace',
                           color: 'var(--morandi-dusty-rose)',
                           background: 'rgba(201,169,166,0.1)',
                           border: '1px solid rgba(201,169,166,0.25)',
-                          padding: '2px 7px',
-                          borderRadius: 4,
-                          display: 'inline-block',
+                          padding: '2px 6px', borderRadius: 4, display: 'inline-block',
                         }}>
                           {info?.version || '—'}
                         </span>
@@ -536,27 +571,31 @@ export default function ClientDownload() {
                     </td>
 
                     {/* Windows */}
-                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
-                      <PlatformCell url={info?.assets.windows} variant="windows" error={info?.error} releasesUrl={info?.releasesUrl} />
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
+                      <PlatformCell url={info?.assets.windows} variant="windows"
+                        error={info?.error} releasesUrl={info?.releasesUrl} declared={has('windows')} />
                     </td>
 
                     {/* macOS */}
-                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
-                      <MacOSCell macos={info?.assets.macos} error={info?.error} releasesUrl={info?.releasesUrl} />
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
+                      <MacOSCell macos={info?.assets.macos}
+                        error={info?.error} releasesUrl={info?.releasesUrl} declared={has('macos')} />
                     </td>
 
                     {/* Linux */}
-                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
-                      <PlatformCell url={info?.assets.linux} variant="linux" error={info?.error} releasesUrl={info?.releasesUrl} />
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
+                      <PlatformCell url={info?.assets.linux} variant="linux"
+                        error={info?.error} releasesUrl={info?.releasesUrl} declared={has('linux')} />
                     </td>
 
                     {/* Android */}
-                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
-                      <PlatformCell url={info?.assets.android} variant="android" error={info?.error} releasesUrl={info?.releasesUrl} />
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
+                      <PlatformCell url={info?.assets.android} variant="android"
+                        error={info?.error} releasesUrl={info?.releasesUrl} declared={has('android')} />
                     </td>
 
                     {/* iOS */}
-                    <td style={{ textAlign: 'center', padding: '13px 8px' }}>
+                    <td style={{ textAlign: 'center', padding: '12px 6px' }}>
                       {client.source === 'appstore' ? (
                         <DownloadBtn url={client.storeUrl!} label="前往 ↗" variant="ios" />
                       ) : (
@@ -564,8 +603,8 @@ export default function ClientDownload() {
                           url={info?.assets.ios ?? client.iosStoreUrl}
                           label={client.iosStoreUrl ? '前往 ↗' : '下载'}
                           variant="ios"
-                          error={info?.error}
-                          releasesUrl={info?.releasesUrl}
+                          error={info?.error} releasesUrl={info?.releasesUrl}
+                          declared={has('ios')}
                         />
                       )}
                     </td>
@@ -585,27 +624,58 @@ export default function ClientDownload() {
               Linux 服务器安装
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              一键安装 Mihomo 代理服务，自动配置每日订阅更新
+              一键安装 Mihomo 代理服务并自动配置订阅更新
             </div>
           </div>
         </div>
 
         <div style={{ padding: '16px 20px' }}>
-          {/* 订阅选择 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)', whiteSpace: 'nowrap', fontWeight: 500 }}>
-              选择订阅
-            </span>
-            <Select
-              style={{ minWidth: 220 }}
-              placeholder="选择订阅以预填地址"
-              value={selectedSubId}
-              onChange={handleSubChange}
-              options={subscriptions.map(s => ({ value: s.id, label: s.name }))}
-            />
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              订阅 URL 仅在本地生成，不上传
-            </span>
+          {/* 选项区 */}
+          <div style={{
+            background: 'var(--bg-secondary)',
+            borderRadius: 8,
+            padding: '12px 16px',
+            marginBottom: 14,
+            border: '1px solid var(--border-color)',
+          }}>
+            {/* 订阅选择 */}
+            <div style={optionRowStyle}>
+              <span style={optionLabelStyle}>订阅链接</span>
+              <Select
+                style={{ minWidth: 220 }}
+                placeholder="选择订阅以预填地址"
+                value={selectedSubId}
+                onChange={handleSubChange}
+                options={subscriptions.map(s => ({ value: s.id, label: s.name }))}
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>仅在本地生成，不上传</span>
+            </div>
+
+            {/* 自动更新间隔 */}
+            <div style={optionRowStyle}>
+              <span style={optionLabelStyle}>自动更新间隔</span>
+              <Select
+                style={{ width: 140 }}
+                value={updateInterval}
+                onChange={setUpdateInterval}
+                options={INTERVAL_OPTIONS}
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>定时重拉订阅并重启服务</span>
+            </div>
+
+            {/* 安装控制面板 */}
+            <div style={{ ...optionRowStyle, borderBottom: 'none', paddingBottom: 0, marginBottom: 0 }}>
+              <span style={optionLabelStyle}>安装控制面板</span>
+              <Switch
+                size="small"
+                checked={installPanel}
+                onChange={setInstallPanel}
+                style={installPanel ? { background: 'var(--morandi-dusty-rose)' } : {}}
+              />
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {installPanel ? '安装 MetaCubeXD 面板（推荐）' : '跳过面板安装，仅安装核心'}
+              </span>
+            </div>
           </div>
 
           {/* 命令块 */}
@@ -613,8 +683,8 @@ export default function ClientDownload() {
             <pre style={{
               background: 'var(--bg-sidebar)',
               borderRadius: 8,
-              padding: '14px 48px 14px 18px',
-              fontFamily: "'Courier New', 'Noto Sans SC', monospace",
+              padding: '14px 56px 14px 18px',
+              fontFamily: "'Courier New', monospace",
               fontSize: 12.5,
               color: 'var(--morandi-cream)',
               lineHeight: 1.9,
@@ -631,9 +701,7 @@ export default function ClientDownload() {
               onClick={handleCopy}
               loading={copying}
               style={{
-                position: 'absolute',
-                top: 10,
-                right: 10,
+                position: 'absolute', top: 10, right: 10,
                 background: 'rgba(201,169,166,0.15)',
                 borderColor: 'rgba(201,169,166,0.3)',
                 color: 'var(--morandi-dusty-rose)',
@@ -647,12 +715,8 @@ export default function ClientDownload() {
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
             服务器可直连 GitHub？去掉 gh-proxy 前缀并加{' '}
             <code style={{
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border-color)',
-              padding: '1px 6px',
-              borderRadius: 4,
-              color: 'var(--text-secondary)',
-              fontSize: 11,
+              background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+              padding: '1px 6px', borderRadius: 4, color: 'var(--text-secondary)', fontSize: 11,
             }}>
               --no-github-proxy
             </code>
