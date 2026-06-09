@@ -13,18 +13,18 @@
 
 ## 2. 客户端列表（静态配置）
 
-| 客户端 | 来源 | 平台 | GitHub Repo |
-|--------|------|------|-------------|
-| Clash Verge Rev | GitHub | Windows / macOS / Linux | `clash-verge-rev/clash-verge-rev` |
-| Mihomo Party | GitHub | Windows / macOS / Linux | `mihomo-party-org/mihomo-party` |
-| Hiddify | GitHub | Windows / macOS / Linux / Android / iOS | `hiddify/hiddify-app` |
-| ClashMetaForAndroid | GitHub | Android | `MetaCubeX/ClashMetaForAndroid` |
-| Clash for Android | GitHub | Android | `Kr328/ClashForAndroid` |
-| ClashMi | GitHub | iOS / Android | `KaringX/clashmi` |
-| Stash | App Store | iOS | — |
-| Shadowrocket | App Store | iOS | — |
+| 客户端 | 维护状态 | 来源 | 平台 | GitHub Repo |
+|--------|----------|------|------|-------------|
+| Clash Verge Rev | 🟢 活跃 | GitHub | Windows / macOS / Linux | `clash-verge-rev/clash-verge-rev` |
+| Mihomo Party | 🔴 已停更 | GitHub | Windows / macOS / Linux | `mihomo-party-org/mihomo-party` |
+| Hiddify | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `hiddify/hiddify-app` |
+| ClashMetaForAndroid | 🟢 活跃 | GitHub | Android | `MetaCubeX/ClashMetaForAndroid` |
+| Clash for Android | 🔴 已停更 | GitHub | Android | `Kr328/ClashForAndroid` |
+| ClashMi | 🟢 活跃 | GitHub | Windows / macOS / Linux / Android / iOS | `KaringX/clashmi` |
+| Stash | 🟢 活跃 | App Store | iOS | — |
+| Shadowrocket | 🟢 活跃 | App Store | iOS | — |
 
-App Store 客户端不拉版本，直接链到 App Store 页面。
+App Store 客户端不拉版本，直接链到 App Store 页面。已停更客户端仍通过 GitHub API 拉取最后发布版本并提供下载。
 
 ---
 
@@ -120,7 +120,7 @@ TTL: 86400000 ms（1 天）
 - 加载中：版本列显示 spin 动画
 - 成功：显示版本号（如 `v2.2.3`）
 - App Store 客户端：版本列显示「App Store」灰色文字
-- 已停更客户端（Clash for Android）：版本列显示「已停更」灰色文字，仍提供最后版本下载
+- 已停更客户端（Clash for Android、Mihomo Party）：版本列显示「已停更」灰色文字，仍提供最后版本下载
 - 获取失败：显示「获取失败」+ 「前往 GitHub ↗」链接
 
 **右上角：**
