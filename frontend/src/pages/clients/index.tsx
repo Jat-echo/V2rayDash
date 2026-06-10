@@ -282,7 +282,7 @@ async function fetchRelease(client: ClientConfig): Promise<ReleaseInfo> {
 
 // ── 缓存 ──────────────────────────────────────────────────────────────────────
 
-const CACHE_KEY = 'v2raydash_clients_cache'
+const CACHE_KEY = 'v2raydash_clients_cache_v2'
 const CACHE_TTL = 86400000 // 1 天 ms
 
 function loadCache(): ClientsCache | null {
