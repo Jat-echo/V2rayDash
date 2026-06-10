@@ -81,7 +81,9 @@ const CLIENT_LIST: ClientConfig[] = [
       macosIntel: /Clash\.Verge_.*x64\.dmg$/i,
       macosApple: /Clash\.Verge_.*(aarch64|arm64)\.dmg$/i,
       linux: [
-        { pattern: /Clash\.Verge_.*(amd64|x86_64)\.AppImage$/i, label: 'x64' },
+        { pattern: /Clash\.Verge_.*amd64\.deb$/i,       label: 'x64 .deb' },
+        { pattern: /Clash\.Verge-.*x86_64\.rpm$/i,       label: 'x64 .rpm' },
+        { pattern: /Clash\.Verge_.*arm64\.deb$/i,        label: 'arm64 .deb' },
       ],
     },
   },
@@ -282,7 +284,7 @@ async function fetchRelease(client: ClientConfig): Promise<ReleaseInfo> {
 
 // ── 缓存 ──────────────────────────────────────────────────────────────────────
 
-const CACHE_KEY = 'v2raydash_clients_cache_v2'
+const CACHE_KEY = 'v2raydash_clients_cache_v3'
 const CACHE_TTL = 86400000 // 1 天 ms
 
 function loadCache(): ClientsCache | null {
