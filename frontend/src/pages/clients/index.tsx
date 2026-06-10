@@ -782,7 +782,7 @@ export default function ClientDownload() {
                 lineHeight: 1.9,
                 border: '1px solid rgba(255,255,255,0.06)',
                 resize: 'vertical',
-                minHeight: 110,
+                minHeight: 140,
                 outline: 'none',
                 boxSizing: 'border-box',
                 whiteSpace: 'pre',
