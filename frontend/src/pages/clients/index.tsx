@@ -175,7 +175,8 @@ const CLIENT_LIST: ClientConfig[] = [
     source: 'github',
     repo: 'KaringX/clashmi',
     stars: 7465,
-    platforms: ['windows', 'macos', 'linux', 'android'],
+    platforms: ['windows', 'macos', 'linux', 'android', 'ios'],
+    iosStoreUrl: 'https://apps.apple.com/us/app/clash-mi/id6744321968',
     patterns: {
       windows: [
         { pattern: /clashmi.*windows.*x64\.exe$/i,       label: 'x64' },
@@ -284,7 +285,7 @@ async function fetchRelease(client: ClientConfig): Promise<ReleaseInfo> {
 
 // ── 缓存 ──────────────────────────────────────────────────────────────────────
 
-const CACHE_KEY = 'v2raydash_clients_cache_v3'
+const CACHE_KEY = 'v2raydash_clients_cache_v4'
 const CACHE_TTL = 86400000 // 1 天 ms
 
 function loadCache(): ClientsCache | null {
@@ -636,13 +637,7 @@ export default function ClientDownload() {
                       ) : info?.error ? (
                         <span style={{ fontSize: 11, color: 'var(--morandi-terracotta)' }}>失败</span>
                       ) : (
-                        <span style={{
-                          fontSize: 11, fontFamily: 'monospace',
-                          color: 'var(--morandi-terracotta)',
-                          background: 'rgba(196,131,106,0.08)',
-                          border: '1px solid rgba(196,131,106,0.25)',
-                          padding: '2px 6px', borderRadius: 4, display: 'inline-block',
-                        }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {info?.version || '—'}
                         </span>
                       )}
