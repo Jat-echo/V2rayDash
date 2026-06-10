@@ -6,16 +6,26 @@ import { subscriptionAPI, Subscription } from '../../services/api'
 
 // ── 类型定义 ──────────────────────────────────────────────────────────────────
 
+interface AssetEntry {
+  pattern: RegExp
+  label: string   // 显示在按钮上的文字，如 "x64"、"arm64"、"universal"
+}
+
+interface PlatformVariant {
+  url: string
+  label: string
+}
+
 interface MacOSAssets {
   intel?: string
   apple?: string
 }
 
 interface ResolvedAssets {
-  windows?: string
+  windows?: PlatformVariant[]
   macos?: MacOSAssets
-  linux?: string
-  android?: string
+  linux?: PlatformVariant[]
+  android?: PlatformVariant[]
   ios?: string
 }
 
@@ -32,12 +42,12 @@ interface ClientsCache {
 }
 
 interface AssetPatterns {
-  windows?: RegExp
+  windows?: AssetEntry[]       // 多版本数组
   macosIntel?: RegExp
   macosApple?: RegExp
   macosUniversal?: RegExp
-  linux?: RegExp
-  android?: RegExp
+  linux?: AssetEntry[]         // 多版本数组
+  android?: AssetEntry[]       // 多版本数组
   ios?: RegExp
 }
 
@@ -57,7 +67,6 @@ interface ClientConfig {
 
 const CLIENT_LIST: ClientConfig[] = [
   {
-    // 实际文件名: Clash.Verge_2.5.1_x64-setup.exe / _x64.dmg / _aarch64.dmg / _amd64.AppImage
     name: 'Clash Verge Rev',
     description: '基于 Tauri 的跨平台代理客户端',
     source: 'github',
@@ -65,14 +74,18 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 124277,
     platforms: ['windows', 'macos', 'linux'],
     patterns: {
-      windows:    /Clash\.Verge_.*x64.*\.(exe|msi)$/i,
+      windows: [
+        { pattern: /Clash\.Verge_.*x64.*\.(exe|msi)$/i,   label: 'x64' },
+        { pattern: /Clash\.Verge_.*arm64.*\.(exe|msi)$/i,  label: 'arm64' },
+      ],
       macosIntel: /Clash\.Verge_.*x64\.dmg$/i,
       macosApple: /Clash\.Verge_.*(aarch64|arm64)\.dmg$/i,
-      linux:      /Clash\.Verge_.*(amd64|x86_64)\.AppImage$/i,
+      linux: [
+        { pattern: /Clash\.Verge_.*(amd64|x86_64)\.AppImage$/i, label: 'x64' },
+      ],
     },
   },
   {
-    // 实际文件名: FlClash-0.8.93-windows-amd64-setup.exe / -macos-amd64.dmg / -macos-arm64.dmg / -linux-amd64.AppImage / -android-arm64-v8a.apk
     name: 'FlClash',
     description: '基于 Flutter 的现代化跨平台客户端',
     source: 'github',
@@ -80,15 +93,23 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 41795,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows:    /FlClash-.*windows-amd64.*\.exe$/i,
+      windows: [
+        { pattern: /FlClash-.*windows-amd64.*\.exe$/i,  label: 'x64' },
+        { pattern: /FlClash-.*windows-arm64.*\.exe$/i,  label: 'arm64' },
+      ],
       macosIntel: /FlClash-.*macos-amd64\.dmg$/i,
       macosApple: /FlClash-.*macos-arm64\.dmg$/i,
-      linux:      /FlClash-.*linux-amd64\.AppImage$/i,
-      android:    /FlClash-.*android-arm64.*\.apk$/i,
+      linux: [
+        { pattern: /FlClash-.*linux-amd64\.AppImage$/i, label: 'x64' },
+      ],
+      android: [
+        { pattern: /FlClash-.*android-arm64.*\.apk$/i,     label: 'arm64' },
+        { pattern: /FlClash-.*android-armeabi.*\.apk$/i,   label: 'arm' },
+        { pattern: /FlClash-.*android-x86_64.*\.apk$/i,    label: 'x86_64' },
+      ],
     },
   },
   {
-    // 实际文件名: cmfa-2.11.30-meta-universal-release.apk
     name: 'ClashMetaForAndroid',
     description: 'Android 专属 Clash Meta 客户端',
     source: 'github',
@@ -96,12 +117,14 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 40949,
     platforms: ['android'],
     patterns: {
-      android: /cmfa-.*universal.*\.apk$/i,
+      android: [
+        { pattern: /cmfa-.*universal.*\.apk$/i,    label: 'universal' },
+        { pattern: /cmfa-.*arm64-v8a.*\.apk$/i,    label: 'arm64' },
+        { pattern: /cmfa-.*armeabi-v7a.*\.apk$/i,  label: 'arm' },
+      ],
     },
   },
   {
-    // 实际文件名: mihomo-windows-amd64-v1.19.27.zip / -darwin-amd64-v1.19.27.gz / -darwin-arm64-v1.19.27.gz / -linux-amd64-v1.19.27.gz / -android-arm64-v8-v1.19.27.gz
-    // 注意: 有大量 -v1-go120- 变体，需精确匹配不带 go 版本后缀的干净文件
     name: 'Mihomo',
     description: 'Clash Meta 核心代理引擎（命令行）',
     source: 'github',
@@ -109,15 +132,21 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 31128,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows:    /mihomo-windows-amd64-v\d+\.\d+\.\d+\.zip$/i,
+      windows: [
+        { pattern: /mihomo-windows-amd64-v\d+\.\d+\.\d+\.zip$/i,  label: 'x64' },
+        { pattern: /mihomo-windows-arm64-v\d+\.\d+\.\d+\.zip$/i,  label: 'arm64' },
+      ],
       macosIntel: /mihomo-darwin-amd64-v\d+\.\d+\.\d+\.gz$/i,
       macosApple: /mihomo-darwin-arm64-v\d+\.\d+\.\d+\.gz$/i,
-      linux:      /mihomo-linux-amd64-v\d+\.\d+\.\d+\.gz$/i,
-      android:    /mihomo-android-arm64-v8-v\d+\.\d+\.\d+\.gz$/i,
+      linux: [
+        { pattern: /mihomo-linux-amd64-v\d+\.\d+\.\d+\.gz$/i,    label: 'x64' },
+      ],
+      android: [
+        { pattern: /mihomo-android-arm64-v8-v\d+\.\d+\.\d+\.gz$/i, label: 'arm64' },
+      ],
     },
   },
   {
-    // 实际文件名: Hiddify-Windows-Setup-x64.exe / Hiddify-MacOS.dmg（通用包，无架构后缀）/ Hiddify-Linux-x64-AppImage.AppImage / Hiddify-Android-universal.apk
     name: 'Hiddify',
     description: '全平台开源代理客户端',
     source: 'github',
@@ -126,14 +155,19 @@ const CLIENT_LIST: ClientConfig[] = [
     platforms: ['windows', 'macos', 'linux', 'android', 'ios'],
     iosStoreUrl: 'https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532',
     patterns: {
-      windows:       /Hiddify-Windows-Setup-x64\.exe$/i,
+      windows: [
+        { pattern: /Hiddify-Windows-Setup-x64\.exe$/i, label: 'x64' },
+      ],
       macosUniversal: /Hiddify-MacOS\.dmg$/i,
-      linux:         /Hiddify-Linux-x64-AppImage\.AppImage$/i,
-      android:       /Hiddify-Android-universal\.apk$/i,
+      linux: [
+        { pattern: /Hiddify-Linux-x64-AppImage\.AppImage$/i, label: 'x64' },
+      ],
+      android: [
+        { pattern: /Hiddify-Android-universal\.apk$/i, label: 'universal' },
+      ],
     },
   },
   {
-    // 实际文件名: clashmi_1.0.24.1006_windows_x64.exe / _macos_universal.dmg / _linux_amd64.AppImage / _android_arm64-v8a.apk（无 iOS 直接下载）
     name: 'ClashMi',
     description: '全平台 Clash Meta 客户端',
     source: 'github',
@@ -141,10 +175,17 @@ const CLIENT_LIST: ClientConfig[] = [
     stars: 7465,
     platforms: ['windows', 'macos', 'linux', 'android'],
     patterns: {
-      windows:       /clashmi.*windows.*x64\.exe$/i,
+      windows: [
+        { pattern: /clashmi.*windows.*x64\.exe$/i,       label: 'x64' },
+      ],
       macosUniversal: /clashmi.*macos.*universal.*\.dmg$/i,
-      linux:         /clashmi.*linux.*amd64\.AppImage$/i,
-      android:       /clashmi.*android.*arm64.*\.apk$/i,
+      linux: [
+        { pattern: /clashmi.*linux.*amd64\.AppImage$/i,  label: 'x64' },
+      ],
+      android: [
+        { pattern: /clashmi.*android.*arm64.*\.apk$/i,    label: 'arm64' },
+        { pattern: /clashmi.*android.*armeabi.*\.apk$/i,  label: 'arm' },
+      ],
     },
   },
   {
@@ -171,20 +212,28 @@ function parseAssets(
   rawAssets: Array<{ name: string; browser_download_url: string }>,
   patterns: AssetPatterns,
 ): ResolvedAssets {
-  const find = (re: RegExp) =>
+  const findOne = (re: RegExp) =>
     rawAssets.find(a => re.test(a.name))?.browser_download_url
+
+  const findAll = (entries: AssetEntry[]): PlatformVariant[] =>
+    entries
+      .map(e => {
+        const hit = rawAssets.find(a => e.pattern.test(a.name))
+        return hit ? { url: hit.browser_download_url, label: e.label } : null
+      })
+      .filter((v): v is PlatformVariant => v !== null)
 
   const result: ResolvedAssets = {}
 
   if (patterns.windows) {
-    const url = find(patterns.windows)
-    if (url) result.windows = url
+    const variants = findAll(patterns.windows)
+    if (variants.length) result.windows = variants
   }
 
   // macOS: universal 作为 Intel 和 M芯片的 fallback
-  const universalUrl = patterns.macosUniversal ? find(patterns.macosUniversal) : undefined
-  const intelUrl = patterns.macosIntel ? find(patterns.macosIntel) : undefined
-  const appleUrl = patterns.macosApple ? find(patterns.macosApple) : undefined
+  const universalUrl = patterns.macosUniversal ? findOne(patterns.macosUniversal) : undefined
+  const intelUrl     = patterns.macosIntel     ? findOne(patterns.macosIntel)     : undefined
+  const appleUrl     = patterns.macosApple     ? findOne(patterns.macosApple)     : undefined
   const resolvedIntel = intelUrl ?? universalUrl
   const resolvedApple = appleUrl ?? universalUrl
   if (resolvedIntel || resolvedApple) {
@@ -192,17 +241,17 @@ function parseAssets(
   }
 
   if (patterns.linux) {
-    const url = find(patterns.linux)
-    if (url) result.linux = url
+    const variants = findAll(patterns.linux)
+    if (variants.length) result.linux = variants
   }
 
   if (patterns.android) {
-    const url = find(patterns.android)
-    if (url) result.android = url
+    const variants = findAll(patterns.android)
+    if (variants.length) result.android = variants
   }
 
   if (patterns.ios) {
-    const url = find(patterns.ios)
+    const url = findOne(patterns.ios)
     if (url) result.ios = url
   }
 
@@ -344,16 +393,26 @@ function MacOSCell({ macos, error, releasesUrl, declared }: {
   )
 }
 
-function PlatformCell({ url, label, variant, error, releasesUrl, declared }: {
-  url?: string; label?: string; variant: keyof typeof PLATFORM_THEME;
+function PlatformCell({ variants, variant: theme, error, releasesUrl, declared }: {
+  variants?: PlatformVariant[]
+  variant: keyof typeof PLATFORM_THEME
   error?: boolean; releasesUrl?: string; declared: boolean
 }) {
   if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
-  if (!url) {
+  if (!variants?.length) {
     if (declared && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" variant="github" />
     return <span style={dashStyle}>—</span>
   }
-  return <DownloadBtn url={url} label={label ?? '下载'} variant={variant} />
+  if (variants.length === 1) {
+    return <DownloadBtn url={variants[0].url} label={variants[0].label} variant={theme} />
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+      {variants.map(v => (
+        <DownloadBtn key={v.label} url={v.url} label={v.label} variant={theme} />
+      ))}
+    </div>
+  )
 }
 
 // ── 主组件 ────────────────────────────────────────────────────────────────────
@@ -529,17 +588,24 @@ export default function ClientDownload() {
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(201,169,166,0.04)')}
                     onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
-                    {/* 名称（紧凑） */}
+                    {/* 名称 + 描述 */}
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>{client.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{client.description}</div>
                     </td>
 
-                    {/* Stars */}
+                    {/* Stars（可点击跳转 GitHub） */}
                     <td style={{ textAlign: 'center', padding: '12px 6px' }}>
-                      {client.stars ? (
-                        <span style={{ fontSize: 11, color: 'var(--morandi-sand)', fontWeight: 500 }}>
+                      {client.stars && client.repo ? (
+                        <a
+                          href={`https://github.com/${client.repo}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ fontSize: 11, color: 'var(--morandi-sand)', fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+                        >
+                          <StarOutlined style={{ fontSize: 10 }} />
                           {formatStars(client.stars)}
-                        </span>
+                        </a>
                       ) : <span style={dashStyle}>—</span>}
                     </td>
 
@@ -566,7 +632,7 @@ export default function ClientDownload() {
 
                     {/* Windows */}
                     <td style={{ textAlign: 'center', padding: '12px 6px' }}>
-                      <PlatformCell url={info?.assets.windows} variant="windows"
+                      <PlatformCell variants={info?.assets.windows} variant="windows"
                         error={info?.error} releasesUrl={info?.releasesUrl} declared={has('windows')} />
                     </td>
 
@@ -578,13 +644,13 @@ export default function ClientDownload() {
 
                     {/* Linux */}
                     <td style={{ textAlign: 'center', padding: '12px 6px' }}>
-                      <PlatformCell url={info?.assets.linux} variant="linux"
+                      <PlatformCell variants={info?.assets.linux} variant="linux"
                         error={info?.error} releasesUrl={info?.releasesUrl} declared={has('linux')} />
                     </td>
 
                     {/* Android */}
                     <td style={{ textAlign: 'center', padding: '12px 6px' }}>
-                      <PlatformCell url={info?.assets.android} variant="android"
+                      <PlatformCell variants={info?.assets.android} variant="android"
                         error={info?.error} releasesUrl={info?.releasesUrl} declared={has('android')} />
                     </td>
 
@@ -594,8 +660,9 @@ export default function ClientDownload() {
                         <DownloadBtn url={client.storeUrl!} label="前往 ↗" variant="ios" />
                       ) : (
                         <PlatformCell
-                          url={info?.assets.ios ?? client.iosStoreUrl}
-                          label={client.iosStoreUrl ? '前往 ↗' : '下载'}
+                          variants={info?.assets.ios ?? client.iosStoreUrl
+                            ? [{ url: info?.assets.ios ?? client.iosStoreUrl!, label: client.iosStoreUrl ? '前往 ↗' : '下载' }]
+                            : undefined}
                           variant="ios"
                           error={info?.error} releasesUrl={info?.releasesUrl}
                           declared={has('ios')}
