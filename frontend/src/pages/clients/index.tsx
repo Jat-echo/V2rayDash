@@ -1,5 +1,5 @@
 // frontend/src/pages/clients/index.tsx
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Select, Spin, Button, Switch, message } from 'antd'
 import { ReloadOutlined, CopyOutlined, WindowsOutlined, AppleOutlined, AndroidOutlined, MobileOutlined, StarOutlined } from '@ant-design/icons'
 import { subscriptionAPI, Subscription } from '../../services/api'
@@ -436,6 +436,7 @@ export default function ClientDownload() {
   const [copying, setCopying] = useState(false)
   const [updateInterval, setUpdateInterval] = useState('1h')
   const [installPanel, setInstallPanel] = useState(true)
+  const [editedCmd, setEditedCmd] = useState('')
 
   const load = useCallback(async (force = false) => {
     setLoading(true)
@@ -465,22 +466,39 @@ export default function ClientDownload() {
     }
   }
 
-  const cmdParts = [
-    `      --sub '${subLink || '你的订阅地址'}'`,
-    ...(installPanel ? [`      --secret '你的面板密码'`] : []),
-    `      --update-interval ${updateInterval}`,
-    ...(!installPanel ? ['      --no-ui'] : []),
-  ]
-  const installCmd = [
-    'curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/Jat-echo/InstallMihomo/main/install-mihomo.sh \\',
-    '  | sudo bash -s -- \\',
-    ...cmdParts.slice(0, -1).map(p => p + ' \\'),
-    cmdParts[cmdParts.length - 1],
-  ].join('\n')
+  const installCmd = useMemo(() => {
+    const parts = [
+      `      --sub '${subLink || '你的订阅地址'}'`,
+      ...(installPanel ? [`      --secret '你的面板密码'`] : []),
+      `      --update-interval ${updateInterval}`,
+      ...(!installPanel ? ['      --no-ui'] : []),
+    ]
+    return [
+      'curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/Jat-echo/InstallMihomo/main/install-mihomo.sh \\',
+      '  | sudo bash -s -- \\',
+      ...parts.slice(0, -1).map(p => p + ' \\'),
+      parts[parts.length - 1],
+    ].join('\n')
+  }, [subLink, updateInterval, installPanel])
+
+  // 选项变化时同步命令（用户手动编辑的内容会被覆盖）
+  useEffect(() => { setEditedCmd(installCmd) }, [installCmd])
 
   const handleCopy = async () => {
+    const text = editedCmd
     try {
-      await navigator.clipboard.writeText(installCmd)
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        // HTTP 环境降级方案
+        const el = document.createElement('textarea')
+        el.value = text
+        el.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+      }
       setCopying(true)
       message.success('命令已复制')
       setTimeout(() => setCopying(false), 2000)
@@ -550,9 +568,7 @@ export default function ClientDownload() {
                   background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)',
                   width: 160,
                 }}>客户端</th>
-                <th style={{ ...thStyle, width: 60 }}>
-                  <StarOutlined style={{ fontSize: 12 }} />
-                </th>
+                <th style={{ ...thStyle, width: 70 }}>GitHub</th>
                 <th style={{ ...thStyle, width: 80 }}>版本</th>
                 <th style={thStyle}>
                   <WindowsOutlined style={{ fontSize: 13 }} />
@@ -601,9 +617,9 @@ export default function ClientDownload() {
                           href={`https://github.com/${client.repo}`}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ fontSize: 11, color: 'var(--morandi-sand)', fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+                          style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 500, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 3 }}
                         >
-                          <StarOutlined style={{ fontSize: 10 }} />
+                          <StarOutlined style={{ fontSize: 11, color: 'var(--morandi-terracotta)' }} />
                           {formatStars(client.stars)}
                         </a>
                       ) : <span style={dashStyle}>—</span>}
@@ -620,9 +636,9 @@ export default function ClientDownload() {
                       ) : (
                         <span style={{
                           fontSize: 11, fontFamily: 'monospace',
-                          color: 'var(--morandi-dusty-rose)',
-                          background: 'rgba(201,169,166,0.1)',
-                          border: '1px solid rgba(201,169,166,0.25)',
+                          color: 'var(--morandi-terracotta)',
+                          background: 'rgba(196,131,106,0.08)',
+                          border: '1px solid rgba(196,131,106,0.25)',
                           padding: '2px 6px', borderRadius: 4, display: 'inline-block',
                         }}>
                           {info?.version || '—'}
@@ -749,23 +765,30 @@ export default function ClientDownload() {
             </div>
           </div>
 
-          {/* 命令块 */}
+          {/* 命令块（可编辑） */}
           <div style={{ position: 'relative' }}>
-            <pre style={{
-              background: 'var(--bg-sidebar)',
-              borderRadius: 8,
-              padding: '14px 56px 14px 18px',
-              fontFamily: "'Courier New', monospace",
-              fontSize: 12.5,
-              color: 'var(--morandi-cream)',
-              lineHeight: 1.9,
-              margin: 0,
-              overflowX: 'auto',
-              whiteSpace: 'pre',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              {installCmd}
-            </pre>
+            <textarea
+              value={editedCmd}
+              onChange={e => setEditedCmd(e.target.value)}
+              spellCheck={false}
+              style={{
+                width: '100%',
+                background: 'var(--bg-sidebar)',
+                borderRadius: 8,
+                padding: '14px 60px 14px 18px',
+                fontFamily: "'Courier New', monospace",
+                fontSize: 12.5,
+                color: 'var(--morandi-cream)',
+                lineHeight: 1.9,
+                border: '1px solid rgba(255,255,255,0.06)',
+                resize: 'vertical',
+                minHeight: 110,
+                outline: 'none',
+                boxSizing: 'border-box',
+                whiteSpace: 'pre',
+                overflowX: 'auto',
+              }}
+            />
             <Button
               size="small"
               icon={<CopyOutlined />}
