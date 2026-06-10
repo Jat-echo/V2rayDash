@@ -285,6 +285,7 @@ async function fetchRelease(client: ClientConfig): Promise<ReleaseInfo> {
 
 // ── 缓存 ──────────────────────────────────────────────────────────────────────
 
+// Bump version suffix whenever ReleaseInfo/ResolvedAssets schema changes to invalidate stale caches
 const CACHE_KEY = 'v2raydash_clients_cache_v4'
 const CACHE_TTL = 86400000 // 1 天 ms
 
@@ -314,7 +315,7 @@ async function loadReleases(force = false): Promise<{ data: Record<string, Relea
       return { data: cached.data, fetchedAt: cached.fetchedAt }
     }
   }
-  const githubClients = CLIENT_LIST.filter(c => c.source === 'github')
+  const githubClients = CLIENT_LIST.filter(c => c.source === 'github' && !!c.repo)
   const results = await Promise.all(githubClients.map(c => fetchRelease(c)))
   const data: Record<string, ReleaseInfo> = {}
   githubClients.forEach((c, i) => { data[c.repo!] = results[i] })
@@ -323,6 +324,7 @@ async function loadReleases(force = false): Promise<{ data: Record<string, Relea
 }
 
 // ── 平台配色系统（Morandi 调色板） ────────────────────────────────────────────
+// TODO: expose these as CSS custom properties in theme.css so they respond to theme changes
 
 const PLATFORM_THEME = {
   windows: { bg: 'rgba(157,180,192,0.12)', text: '#4E7A8A', border: 'rgba(157,180,192,0.4)' },
@@ -454,7 +456,7 @@ export default function ClientDownload() {
 
   useEffect(() => {
     load()
-    subscriptionAPI.list().then(list => setSubscriptions(list ?? []))
+    subscriptionAPI.list().then(list => setSubscriptions(list ?? [])).catch(() => {})
   }, [load])
 
   const handleRefresh = () => { clearCache(); load(true) }
@@ -470,8 +472,10 @@ export default function ClientDownload() {
   }
 
   const installCmd = useMemo(() => {
+    // Escape single quotes to prevent shell quoting breakage
+    const safeSubLink = (subLink || '你的订阅地址').replace(/'/g, "'\\''")
     const parts = [
-      `      --sub '${subLink || '你的订阅地址'}'`,
+      `      --sub '${safeSubLink}'`,
       ...(installPanel ? [`      --secret '你的面板密码'`] : []),
       `      --update-interval ${updateInterval}`,
       ...(!installPanel ? ['      --no-ui'] : []),
@@ -671,16 +675,18 @@ export default function ClientDownload() {
                     <td style={{ textAlign: 'center', padding: '12px 6px' }}>
                       {client.source === 'appstore' ? (
                         <DownloadBtn url={client.storeUrl!} label="前往 ↗" variant="ios" />
-                      ) : (
-                        <PlatformCell
-                          variants={info?.assets.ios ?? client.iosStoreUrl
-                            ? [{ url: info?.assets.ios ?? client.iosStoreUrl!, label: client.iosStoreUrl ? '前往 ↗' : '下载' }]
-                            : undefined}
-                          variant="ios"
-                          error={info?.error} releasesUrl={info?.releasesUrl}
-                          declared={has('ios')}
-                        />
-                      )}
+                      ) : (() => {
+                        const iosUrl = info?.assets.ios ?? client.iosStoreUrl
+                        const iosLabel = client.iosStoreUrl ? '前往 ↗' : '下载'
+                        return (
+                          <PlatformCell
+                            variants={iosUrl ? [{ url: iosUrl, label: iosLabel }] : undefined}
+                            variant="ios"
+                            error={info?.error} releasesUrl={info?.releasesUrl}
+                            declared={has('ios')}
+                          />
+                        )
+                      })()}
                     </td>
                   </tr>
                 )
@@ -763,6 +769,17 @@ export default function ClientDownload() {
           </div>
 
           {/* 命令块（可编辑） */}
+          {editedCmd !== installCmd && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--morandi-terracotta)' }}>已手动修改</span>
+              <a
+                onClick={() => setEditedCmd(installCmd)}
+                style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                重置
+              </a>
+            </div>
+          )}
           <div style={{ position: 'relative' }}>
             <textarea
               value={editedCmd}
