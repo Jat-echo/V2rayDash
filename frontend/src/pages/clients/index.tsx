@@ -228,29 +228,22 @@ function parseAssets(
 
   const result: ResolvedAssets = {}
 
-  if (patterns.windows) {
-    const variants = findAll(patterns.windows)
-    if (variants.length) result.windows = variants
+  const assign = (key: keyof Pick<ResolvedAssets, 'windows' | 'linux' | 'android'>, entries?: AssetEntry[]) => {
+    if (!entries) return
+    const variants = findAll(entries)
+    if (variants.length) result[key] = variants
   }
+
+  assign('windows', patterns.windows)
+  assign('linux', patterns.linux)
+  assign('android', patterns.android)
 
   // macOS: universal 作为 Intel 和 M芯片的 fallback
-  const universalUrl = patterns.macosUniversal ? findOne(patterns.macosUniversal) : undefined
-  const intelUrl     = patterns.macosIntel     ? findOne(patterns.macosIntel)     : undefined
-  const appleUrl     = patterns.macosApple     ? findOne(patterns.macosApple)     : undefined
-  const resolvedIntel = intelUrl ?? universalUrl
-  const resolvedApple = appleUrl ?? universalUrl
+  const universalUrl  = patterns.macosUniversal ? findOne(patterns.macosUniversal) : undefined
+  const resolvedIntel = (patterns.macosIntel ? findOne(patterns.macosIntel) : undefined) ?? universalUrl
+  const resolvedApple = (patterns.macosApple ? findOne(patterns.macosApple) : undefined) ?? universalUrl
   if (resolvedIntel || resolvedApple) {
     result.macos = { intel: resolvedIntel, apple: resolvedApple }
-  }
-
-  if (patterns.linux) {
-    const variants = findAll(patterns.linux)
-    if (variants.length) result.linux = variants
-  }
-
-  if (patterns.android) {
-    const variants = findAll(patterns.android)
-    if (variants.length) result.android = variants
   }
 
   if (patterns.ios) {
@@ -379,14 +372,16 @@ function DownloadBtn({
   )
 }
 
+function cellFallback(error: boolean | undefined, releasesUrl: string | undefined, declared: boolean): React.ReactNode | null {
+  if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
+  if (declared && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" variant="github" />
+  return <span style={dashStyle}>—</span>
+}
+
 function MacOSCell({ macos, error, releasesUrl, declared }: {
   macos?: MacOSAssets; error?: boolean; releasesUrl?: string; declared: boolean
 }) {
-  if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
-  if (!macos?.intel && !macos?.apple) {
-    if (declared && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" variant="github" />
-    return <span style={dashStyle}>—</span>
-  }
+  if (!macos?.intel && !macos?.apple) return cellFallback(error, releasesUrl, declared)
   if (macos.intel && macos.apple && macos.intel === macos.apple) {
     return <DownloadBtn url={macos.intel} variant="macos" />
   }
@@ -403,11 +398,7 @@ function PlatformCell({ variants, variant: theme, error, releasesUrl, declared }
   variant: keyof typeof PLATFORM_THEME
   error?: boolean; releasesUrl?: string; declared: boolean
 }) {
-  if (error && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" />
-  if (!variants?.length) {
-    if (declared && releasesUrl) return <DownloadBtn url={releasesUrl} label="GitHub ↗" variant="github" />
-    return <span style={dashStyle}>—</span>
-  }
+  if (!variants?.length) return cellFallback(error, releasesUrl, declared)
   if (variants.length === 1) {
     return <DownloadBtn url={variants[0].url} label={variants[0].label} variant={theme} />
   }
@@ -420,7 +411,25 @@ function PlatformCell({ variants, variant: theme, error, releasesUrl, declared }
   )
 }
 
+function IosCell({ client, info, declared }: { client: ClientConfig; info?: ReleaseInfo; declared: boolean }) {
+  if (client.source === 'appstore') {
+    return <DownloadBtn url={client.storeUrl!} label="前往 ↗" variant="ios" />
+  }
+  const iosUrl = info?.assets.ios ?? client.iosStoreUrl
+  return (
+    <PlatformCell
+      variants={iosUrl ? [{ url: iosUrl, label: client.iosStoreUrl ? '前往 ↗' : '下载' }] : undefined}
+      variant="ios"
+      error={info?.error} releasesUrl={info?.releasesUrl}
+      declared={declared}
+    />
+  )
+}
+
 // ── 主组件 ────────────────────────────────────────────────────────────────────
+
+const onRowEnter = (e: React.MouseEvent<HTMLTableRowElement>) => { e.currentTarget.style.background = 'rgba(201,169,166,0.04)' }
+const onRowLeave = (e: React.MouseEvent<HTMLTableRowElement>) => { e.currentTarget.style.background = '' }
 
 const INTERVAL_OPTIONS = [
   { value: '30m', label: '30 分钟' },
@@ -514,9 +523,12 @@ export default function ClientDownload() {
     }
   }
 
-  const cacheTimeStr = fetchedAt
-    ? new Date(fetchedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-    : ''
+  const cacheTimeStr = useMemo(() =>
+    fetchedAt
+      ? new Date(fetchedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '',
+    [fetchedAt]
+  )
 
   const cardStyle: React.CSSProperties = {
     background: 'var(--bg-card)',
@@ -608,8 +620,8 @@ export default function ClientDownload() {
                   <tr
                     key={client.name}
                     style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-color)', transition: 'background 0.15s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(201,169,166,0.04)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                    onMouseEnter={onRowEnter}
+                    onMouseLeave={onRowLeave}
                   >
                     {/* 名称 + 描述 */}
                     <td style={{ padding: '12px 16px' }}>
@@ -673,20 +685,7 @@ export default function ClientDownload() {
 
                     {/* iOS */}
                     <td style={{ textAlign: 'center', padding: '12px 6px' }}>
-                      {client.source === 'appstore' ? (
-                        <DownloadBtn url={client.storeUrl!} label="前往 ↗" variant="ios" />
-                      ) : (() => {
-                        const iosUrl = info?.assets.ios ?? client.iosStoreUrl
-                        const iosLabel = client.iosStoreUrl ? '前往 ↗' : '下载'
-                        return (
-                          <PlatformCell
-                            variants={iosUrl ? [{ url: iosUrl, label: iosLabel }] : undefined}
-                            variant="ios"
-                            error={info?.error} releasesUrl={info?.releasesUrl}
-                            declared={has('ios')}
-                          />
-                        )
-                      })()}
+                      <IosCell client={client} info={info} declared={has('ios')} />
                     </td>
                   </tr>
                 )
