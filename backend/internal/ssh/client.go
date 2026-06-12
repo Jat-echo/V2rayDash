@@ -246,30 +246,50 @@ func (c *SSHClient) ReadRemoteFile(path string) (string, error) {
 	return string(content), nil
 }
 
-// UploadFileExec uploads a file by executing sftp command via SSH exec (more compatible than SFTP subsystem)
+// UploadFileExec uploads a local file to the remote path.
+// Strategy:
+//  1. SFTP subsystem — pure binary transfer, no shell commands (avoids SIGALRM
+//     or other exec-channel restrictions on hardened servers).
+//  2. Chunked base64 via exec — fallback for servers without SFTP subsystem.
 func (c *SSHClient) UploadFileExec(localPath, remotePath string) error {
-	// Read local file content
-	file, err := os.Open(localPath)
+	// --- attempt 1: SFTP ---
+	// Close explicitly before falling through so the subsystem channel is freed
+	// before the chunked exec loop opens its own sessions.
+	if sftpClient, err := NewSFTPClient(c); err == nil {
+		uploadErr := sftpClient.UploadFile(localPath, remotePath)
+		sftpClient.Close()
+		if uploadErr == nil {
+			return c.Execute(fmt.Sprintf("chmod +x %s", remotePath), io.Discard, io.Discard)
+		}
+	}
+
+	// --- attempt 2: chunked base64 exec ---
+	content, err := os.ReadFile(localPath)
 	if err != nil {
 		return fmt.Errorf("failed to open local file: %w", err)
 	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("failed to read local file: %w", err)
-	}
-
-	// Use base64 encoding to safely transfer binary content
 	encoded := base64.StdEncoding.EncodeToString(content)
 
-	// Execute shell command to decode and write file
-	cmd := fmt.Sprintf("echo '%s' | base64 -d > %s && chmod +x %s", encoded, remotePath, remotePath)
-	err = c.Execute(cmd, io.Discard, io.Discard)
-	if err != nil {
-		return fmt.Errorf("failed to upload file: %w", err)
+	// 32 768 chars of base64 ≈ 24 KB binary; multiple of 4 keeps block boundaries valid.
+	const chunkSize = 32768
+	for i := 0; i < len(encoded); i += chunkSize {
+		end := i + chunkSize
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		chunk := encoded[i:end]
+		redirect := ">>"
+		if i == 0 {
+			redirect = ">"
+		}
+		// base64 alphabet has no single quotes, so single-quoting is safe.
+		cmd := fmt.Sprintf("printf '%%s' '%s' | base64 -d %s %s", chunk, redirect, remotePath)
+		if err := c.Execute(cmd, io.Discard, io.Discard); err != nil {
+			return fmt.Errorf("failed to upload file chunk at offset %d: %w", i, err)
+		}
 	}
-	return nil
+
+	return c.Execute(fmt.Sprintf("chmod +x %s", remotePath), io.Discard, io.Discard)
 }
 
 // Close closes the SSH client connection

@@ -86,7 +86,7 @@ func (r *SubscriptionAccountRepository) GetBySubscriptionOrdered(subscriptionID 
 	rows, err := r.db.Query(`
 		SELECT a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
-		       s.name as server_name, s.ip as server_ip
+		       s.name as server_name, s.ip as server_ip, s.country_code as server_country_code
 		FROM accounts a
 		JOIN subscription_accounts sa ON a.id = sa.account_id
 		JOIN servers s ON a.server_id = s.id
@@ -104,7 +104,7 @@ func (r *SubscriptionAccountRepository) GetBySubscriptionOrdered(subscriptionID 
 		var protocols pq.StringArray
 		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols,
 			&a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt,
-			&a.ServerName, &a.ServerIP); err != nil {
+			&a.ServerName, &a.ServerIP, &a.ServerCountryCode); err != nil {
 			return nil, err
 		}
 		a.Protocols = protocols

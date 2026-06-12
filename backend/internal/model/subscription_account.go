@@ -17,6 +17,7 @@ type AccountMapping struct {
 
 type AccountWithServerInfo struct {
 	Account
-	ServerName string `json:"server_name"`
-	ServerIP   string `json:"server_ip"`
+	ServerName        string `json:"server_name"`
+	ServerIP          string `json:"server_ip"`
+	ServerCountryCode string `json:"server_country_code"`
 }

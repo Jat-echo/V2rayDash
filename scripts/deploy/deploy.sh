@@ -66,7 +66,7 @@ fi
 
 # 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 echo -e "${GREEN}====== V2rayDash 部署脚本 ======${NC}"
 echo -e "${BLUE}服务器: ${SERVER_USER}@${SERVER_IP}:${SERVER_PORT}${NC}"

@@ -79,20 +79,18 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 	defer sshClient.Close()
 	fmt.Fprintf(output, "[%s] SSH连接成功\n", time.Now().Format("15:04:05"))
 
-	// 2. 上传脚本
-	fmt.Fprintf(output, "[%s] 正在上传安装脚本...\n", time.Now().Format("15:04:05"))
-	remotePath := "/tmp/v2ray_install.sh"
-	// Use exec-based SFTP via ssh command for better compatibility
-	if err := sshClient.UploadFileExec(i.scriptPath, remotePath); err != nil {
-		return &InstallResult{Success: false, Error: fmt.Sprintf("上传脚本失败: %v", err)}
-	}
-	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
-
+	// 2. 校验配置（提前，避免配置错误时浪费 SSH 连接）
 	if result := validateInstallConfig(config); result != nil {
 		return result
 	}
 
-	// 3. 构建安装命令参数
+	// 3. 获取安装脚本
+	remotePath := "/tmp/v2ray_install.sh"
+	if err := i.ensureScript(sshClient, output, remotePath, config.ControlCenterURL); err != nil {
+		return &InstallResult{Success: false, Error: fmt.Sprintf("获取安装脚本失败: %v", err)}
+	}
+
+	// 4. 构建安装命令参数
 	var args []string
 
 	// 核心
@@ -136,7 +134,7 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 	} else {
 		menuSelect = "3\n1\n"
 	}
-	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"%s\" | sudo -n bash %s %s' /dev/null", remotePath, menuSelect, remotePath, strings.Join(args, " "))
+	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"%s\" | bash %s %s' /dev/null", remotePath, menuSelect, remotePath, strings.Join(args, " "))
 
 	// 捕获安装输出以便后续解析 publicKey 和端口
 	var installOutput strings.Builder
@@ -216,31 +214,19 @@ func (i *Installer) InstallStreaming(w io.Writer, flusher http.Flusher, config *
 	defer sshClient.Close()
 	fmt.Fprintf(output, "[%s] SSH连接成功\n", time.Now().Format("15:04:05"))
 
-	// 2. 上传脚本
-	fmt.Fprintf(output, "[%s] 正在上传安装脚本...\n", time.Now().Format("15:04:05"))
-	sftpClient, err := ssh.NewSFTPClient(sshClient)
-	if err != nil {
-		fmt.Fprintf(output, "[ERROR] SFTP连接失败: %v\n", err)
-		return &InstallResult{Success: false, Error: fmt.Sprintf("SFTP连接失败: %v", err)}
-	}
-	defer func() {
-		if sftpClient != nil {
-			sftpClient.Close()
-		}
-	}()
-
-	remotePath := "/tmp/v2ray_install.sh"
-	if err := sftpClient.UploadFile(i.scriptPath, remotePath); err != nil {
-		fmt.Fprintf(output, "[ERROR] 上传脚本失败: %v\n", err)
-		return &InstallResult{Success: false, Error: fmt.Sprintf("上传脚本失败: %v", err)}
-	}
-	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
-
+	// 2. 校验配置（提前，避免配置错误时浪费 SSH 连接）
 	if result := validateInstallConfig(config); result != nil {
 		return result
 	}
 
-	// 3. 构建安装命令参数
+	// 3. 获取安装脚本
+	remotePath := "/tmp/v2ray_install.sh"
+	if err := i.ensureScript(sshClient, output, remotePath, config.ControlCenterURL); err != nil {
+		fmt.Fprintf(output, "[ERROR] 获取安装脚本失败: %v\n", err)
+		return &InstallResult{Success: false, Error: fmt.Sprintf("获取安装脚本失败: %v", err)}
+	}
+
+	// 4. 构建安装命令参数
 	var args []string
 	if config.Core == "sing-box" {
 		args = append(args, "--core sing-box")
@@ -278,7 +264,7 @@ func (i *Installer) InstallStreaming(w io.Writer, flusher http.Flusher, config *
 	} else {
 		menuSelect = "3\n1\n"
 	}
-	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"%s\" | sudo -n bash %s %s' /dev/null", remotePath, menuSelect, remotePath, strings.Join(args, " "))
+	cmd := fmt.Sprintf("chmod +x %s && script -q -c 'printf \"%s\" | bash %s %s' /dev/null", remotePath, menuSelect, remotePath, strings.Join(args, " "))
 
 	done, err := sshClient.ExecuteStreamingWithFlush(cmd, output, flusher)
 	if err != nil {
@@ -450,4 +436,42 @@ func (i *Installer) fetchRealityConfig(client *ssh.SSHClient, core, serverName s
 		ServerName: realityServerName,
 		PublicKey:  publicKey,
 	}, nil
+}
+
+// shellEscapeSQ escapes a string for safe embedding inside single-quoted shell
+// arguments by replacing each single quote with '\'' (end-quote, literal quote,
+// re-open-quote). In single-quoted context all other characters including $ and
+// backticks are literal, so this is the only escaping required.
+func shellEscapeSQ(s string) string {
+	return strings.ReplaceAll(s, "'", `'\''`)
+}
+
+// ensureScript 将安装脚本传送到远端 remotePath。
+// 优先让远端自行 curl/wget 从控制中心拉取（无需推送，避免 SSH exec 通道限制）；
+// 若 URL 为空或下载失败，则回退到直接上传。
+func (i *Installer) ensureScript(client *ssh.SSHClient, output io.Writer, remotePath, controlCenterURL string) error {
+	if controlCenterURL != "" {
+		downloadURL := strings.TrimRight(controlCenterURL, "/") + "/install-agent.sh"
+		fmt.Fprintf(output, "[%s] 正在从控制中心拉取安装脚本: %s\n", time.Now().Format("15:04:05"), downloadURL)
+		escaped := shellEscapeSQ(downloadURL)
+		cmd := fmt.Sprintf(
+			"(curl -fsSL '%s' -o %s || wget -qO %s '%s') && chmod +x %s",
+			escaped, remotePath, remotePath, escaped, remotePath,
+		)
+		if err := client.Execute(cmd, output, output); err == nil {
+			fmt.Fprintf(output, "[%s] 脚本拉取成功\n", time.Now().Format("15:04:05"))
+			return nil
+		}
+		fmt.Fprintf(output, "[%s] 拉取失败，回退到直接上传...\n", time.Now().Format("15:04:05"))
+	}
+
+	if i.scriptPath == "" {
+		return fmt.Errorf("安装脚本路径未配置（URL 拉取失败且无本地脚本）")
+	}
+	fmt.Fprintf(output, "[%s] 正在上传安装脚本...\n", time.Now().Format("15:04:05"))
+	if err := client.UploadFileExec(i.scriptPath, remotePath); err != nil {
+		return err
+	}
+	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
+	return nil
 }

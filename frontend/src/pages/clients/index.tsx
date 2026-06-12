@@ -280,7 +280,7 @@ async function fetchRelease(client: ClientConfig): Promise<ReleaseInfo> {
 
 // Bump version suffix whenever ReleaseInfo/ResolvedAssets schema changes to invalidate stale caches
 const CACHE_KEY = 'v2raydash_clients_cache_v4'
-const CACHE_TTL = 86400000 // 1 天 ms
+const CACHE_TTL = 604800000 // 7 天 ms
 
 function loadCache(): ClientsCache | null {
   try {

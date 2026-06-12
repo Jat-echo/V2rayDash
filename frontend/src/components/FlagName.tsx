@@ -3,11 +3,12 @@ import { getCountryFlag, emojiToSvgUrl } from '../utils/format'
 
 interface FlagNameProps {
   name: string
+  countryCode?: string
   style?: React.CSSProperties
 }
 
-export function FlagName({ name, style }: FlagNameProps) {
-  const emoji = getCountryFlag(name)
+export function FlagName({ name, countryCode, style }: FlagNameProps) {
+  const emoji = getCountryFlag(name, countryCode)
   const [imgOk, setImgOk] = useState(true)
 
   return (

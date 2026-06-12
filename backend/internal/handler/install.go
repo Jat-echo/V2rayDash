@@ -3,7 +3,6 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
@@ -88,13 +87,9 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 
 	// Create install config
 	// 获取控制中心URL
-	controlCenterURL := "http://112.125.93.190:8080"
+	controlCenterURL := ""
 	if setting, err := h.settingRepo.Get("public_url"); err == nil && setting != nil && setting.Value != "" {
 		controlCenterURL = setting.Value
-	}
-	// 确保URL格式正确
-	if _, err := url.Parse(controlCenterURL); err != nil {
-		controlCenterURL = "http://112.125.93.190:8080"
 	}
 
 	installConfig := &service.InstallConfig{

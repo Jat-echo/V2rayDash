@@ -28,6 +28,12 @@ func runMigrations(db *DB) error {
 	// Migration: Add sort_order, note, updated_at columns to subscription_accounts if they don't exist
 	// Using proper PostgreSQL DO blocks to check column existence before adding
 	migrations := []string{
+		`DO $$
+		BEGIN
+			IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'servers' AND column_name = 'country_code') THEN
+				ALTER TABLE servers ADD COLUMN country_code VARCHAR(2) DEFAULT '';
+			END IF;
+		END $$`,
 		// 管理员用户表
 		`CREATE TABLE IF NOT EXISTS admin_users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

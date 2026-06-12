@@ -311,7 +311,7 @@ export default function SubscriptionList() {
         return (
           <Space direction="vertical" size={2}>
             {record.accounts.map(acc => (
-              <Tag key={acc.id} color="blue"><FlagName name={acc.server_name} /> / {acc.email}</Tag>
+              <Tag key={acc.id} color="blue"><FlagName name={acc.server_name} countryCode={acc.server_country_code} /> / {acc.email}</Tag>
             ))}
           </Space>
         )
@@ -465,7 +465,7 @@ export default function SubscriptionList() {
                       onChange={(e) => handleServerSelect(server.id, e.target.checked)}
                       style={{ marginBottom: isSelected ? 8 : 0 }}
                     >
-                      <strong><FlagName name={server.name} /></strong> ({server.ip})
+                      <strong><FlagName name={server.name} countryCode={server.country_code} /></strong> ({server.ip})
                     </Checkbox>
 
                     {isSelected && (
@@ -613,7 +613,7 @@ export default function SubscriptionList() {
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
               {orphanedAccounts.map(a => (
                 <div key={a.id} style={{ padding: '4px 0', fontSize: 13 }}>
-                  <Tag color="blue" style={{ marginRight: 6 }}><FlagName name={a.server_name} /></Tag>
+                  <Tag color="blue" style={{ marginRight: 6 }}><FlagName name={a.server_name} countryCode={a.server_country_code} /></Tag>
                   {a.email}
                 </div>
               ))}
@@ -833,7 +833,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
   // Build left panel: match deltaSeries (colors) with accounts (traffic_used)
   const leftItems = deltaSeries.map((s, i) => {
     const acc = accounts?.find(a => a.server_name === s.server_name && a.email === s.email)
-    return { color: SERIES_COLORS[i % SERIES_COLORS.length], serverName: s.server_name, email: s.email, trafficUsed: acc?.traffic_used ?? 0, key: s.account_id }
+    return { color: SERIES_COLORS[i % SERIES_COLORS.length], serverName: s.server_name, serverCountryCode: acc?.server_country_code ?? '', email: s.email, trafficUsed: acc?.traffic_used ?? 0, key: s.account_id }
   })
 
   return (
@@ -850,7 +850,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
               paddingLeft: 7, borderLeft: `3px solid ${item.color}`,
             }}>
               <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: '0 4px', flexShrink: 0 }}>
-                <FlagName name={item.serverName} />
+                <FlagName name={item.serverName} countryCode={item.serverCountryCode} />
               </Tag>
               <span style={{ color: '#555', fontSize: 12 }}>{item.email}</span>
               <span style={{ color: '#999', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{formatBytes(item.trafficUsed)}</span>
@@ -1011,7 +1011,7 @@ function SortableItem({ id, account, onRemove }: { id: string; account: AccountW
           <HolderOutlined />
         </div>
         <div>
-          <div style={{ fontWeight: 'bold' }}><FlagName name={account.server_name} /> / {account.email}</div>
+          <div style={{ fontWeight: 'bold' }}><FlagName name={account.server_name} countryCode={account.server_country_code} /> / {account.email}</div>
           <div style={{ fontSize: 12, color: '#999' }}>ID: {account.id.substring(0, 8)}...</div>
         </div>
       </div>

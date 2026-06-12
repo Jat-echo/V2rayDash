@@ -9,7 +9,7 @@ const FLAG_MAP: [RegExp, string][] = [
   [/\b(us|usa|united.?states|america|nam|lax|sjc|nyc|chi|dal|sea|mia|atl)\b/i, '🇺🇸'],
   [/\b(hk|hkg|hong.?kong)\b/i, '🇭🇰'],
   [/\b(sgp?|singapore|sin)\b/i, '🇸🇬'],
-  [/\b(jp|jpn|japan|tyo|osa|tok)\b/i, '🇯🇵'],
+  [/\b(jp|jpn|japan|tyo|ty|osa|tok)\b/i, '🇯🇵'],
   [/\b(kr|kor|korea|sel)\b/i, '🇰🇷'],
   [/\b(tw|twn|taiwan|tpe)\b/i, '🇹🇼'],
   [/\b(de|deu|germany|ger|fra|fra1)\b/i, '🇩🇪'],
@@ -32,15 +32,22 @@ const FLAG_MAP: [RegExp, string][] = [
   [/\b(voll?)\b/i, '🇭🇰'],
 ]
 
-export function getCountryFlag(name: string): string {
+// Converts an ISO 3166-1 alpha-2 country code (must be A-Z) to a flag emoji.
+export function countryCodeToFlag(code: string): string {
+  if (!code || !/^[A-Za-z]{2}$/.test(code)) return '🌐'
+  return [...code.toUpperCase()].map(c => String.fromCodePoint(0x1F1E6 + c.charCodeAt(0) - 65)).join('')
+}
+
+export function getCountryFlag(name: string, countryCode?: string): string {
+  if (countryCode) return countryCodeToFlag(countryCode)
   for (const [re, flag] of FLAG_MAP) {
     if (re.test(name)) return flag
   }
   return '🌐'
 }
 
-export function withFlag(name: string): string {
-  return `${getCountryFlag(name)} ${name}`
+export function withFlag(name: string, countryCode?: string): string {
+  return `${getCountryFlag(name, countryCode)} ${name}`
 }
 
 // Returns Twemoji SVG URL for a given emoji character

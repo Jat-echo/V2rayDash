@@ -65,6 +65,15 @@ func (h *ServerHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Geo lookup is cosmetic — run in background so Create returns immediately.
+	if req.CountryCode == "" {
+		go func(id, ip string) {
+			if code := service.LookupCountryCode(ip); code != "" {
+				h.repo.Update(id, &model.UpdateServerRequest{CountryCode: &code})
+			}
+		}(server.ID, server.IP)
+	}
+
 	// 记录操作日志
 	h.logRepo.Create(&model.OperationLog{
 		Operator:   "admin",
@@ -90,6 +99,15 @@ func (h *ServerHandler) Update(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+
+	// When IP changes and no explicit country code was provided, re-resolve in background.
+	if req.IP != nil && (req.CountryCode == nil || *req.CountryCode == "") {
+		go func(sid, ip string) {
+			if code := service.LookupCountryCode(ip); code != "" {
+				h.repo.Update(sid, &model.UpdateServerRequest{CountryCode: &code})
+			}
+		}(id, *req.IP)
 	}
 
 	c.JSON(http.StatusOK, server)

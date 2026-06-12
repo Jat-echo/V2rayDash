@@ -65,7 +65,7 @@ const defaultConfig = {
   core: 'xray-core',
   uuid: '',
   protocols: ['vless_reality_vision'],
-  port: 0,
+  port: 443,
 }
 
 export default function ServerList() {
@@ -493,7 +493,7 @@ export default function ServerList() {
   }
 
   const columns = [
-    { title: '名称', dataIndex: 'name', render: (v: string) => <FlagName name={v} /> },
+    { title: '名称', dataIndex: 'name', render: (v: string, record: any) => <FlagName name={v} countryCode={record.country_code} /> },
     { title: 'IP', dataIndex: 'ip' },
     { title: 'SSH端口', dataIndex: 'ssh_port' },
     { title: 'SSH用户', dataIndex: 'ssh_user' },
@@ -722,7 +722,7 @@ export default function ServerList() {
             />
           </Form.Item>
 
-          <Form.Item label="端口 (留空随机分配)" extra="建议填 443">
+          <Form.Item label="端口" extra="留空或清除则随机分配">
             <InputNumber
               min={1}
               max={65535}

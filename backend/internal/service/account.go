@@ -20,7 +20,7 @@ var flagRules = []struct {
 	{regexp.MustCompile(`(?i)\b(us|usa|united.?states|america|nam|lax|sjc|nyc|chi|dal|sea|mia|atl)\b`), "🇺🇸"},
 	{regexp.MustCompile(`(?i)\b(hk|hkg|hong.?kong)\b`), "🇭🇰"},
 	{regexp.MustCompile(`(?i)\b(sgp?|singapore|sin)\b`), "🇸🇬"},
-	{regexp.MustCompile(`(?i)\b(jp|jpn|japan|tyo|osa|tok)\b`), "🇯🇵"},
+	{regexp.MustCompile(`(?i)\b(jp|jpn|japan|tyo|ty|osa|tok)\b`), "🇯🇵"},
 	{regexp.MustCompile(`(?i)\b(kr|kor|korea|sel)\b`), "🇰🇷"},
 	{regexp.MustCompile(`(?i)\b(tw|twn|taiwan|tpe)\b`), "🇹🇼"},
 	{regexp.MustCompile(`(?i)\b(de|deu|germany|ger)\b`), "🇩🇪"},
@@ -50,6 +50,19 @@ func countryFlag(name string) string {
 		}
 	}
 	return "🌐"
+}
+
+// serverFlag returns the flag emoji for a server, preferring the stored ISO
+// country code over name-based regex matching.
+func serverFlag(server *model.Server) string {
+	if len(server.CountryCode) == 2 {
+		r1 := rune(0x1F1E6 + (rune(server.CountryCode[0]|0x20) - 'a'))
+		r2 := rune(0x1F1E6 + (rune(server.CountryCode[1]|0x20) - 'a'))
+		if r1 >= 0x1F1E6 && r1 <= 0x1F1FF && r2 >= 0x1F1E6 && r2 <= 0x1F1FF {
+			return string([]rune{r1, r2})
+		}
+	}
+	return serverFlag(server)
 }
 
 type RealityConfig struct {
@@ -1664,7 +1677,7 @@ func (s *AccountService) GenerateVLESSSubscriptionMulti(accounts []*model.Accoun
 			continue
 		}
 		reality := realityConfigs[acc.ServerID]
-		remark := fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)])
+		remark := fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)])
 		link := s.GetAccountLink(acc, server.IP, "vless", reality, remark)
 		lines = append(lines, link)
 	}
@@ -1691,7 +1704,7 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 			port = reality.Port
 		}
 
-		nodeName := fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)])
+		nodeName := fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)])
 
 		var proxy map[string]interface{}
 		if reality != nil && reality.Enabled {
@@ -1800,7 +1813,7 @@ func (s *AccountService) GenerateSingBoxSubscriptionMulti(accounts []*model.Acco
 		var outbound map[string]interface{}
 		if reality != nil && reality.Enabled {
 			outbound = map[string]interface{}{
-				"tag":         fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)]),
+				"tag":         fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)]),
 				"type":       "vless",
 				"server":     server.IP,
 				"server_port": 443,
@@ -1822,7 +1835,7 @@ func (s *AccountService) GenerateSingBoxSubscriptionMulti(accounts []*model.Acco
 			}
 		} else {
 			outbound = map[string]interface{}{
-				"tag":         fmt.Sprintf("%s %s-%s", countryFlag(server.Name), server.Name, acc.Email[:min(len(acc.Email), 16)]),
+				"tag":         fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)]),
 				"type":       "vless",
 				"server":     server.IP,
 				"server_port": 443,
