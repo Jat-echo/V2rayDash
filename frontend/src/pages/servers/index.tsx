@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented, Tabs, Spin, Checkbox } from 'antd'
-import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
+import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, UploadOutlined, HddOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { serverAPI, accountAPI, logAPI, subscriptionAPI, Server, Account, Subscription, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
@@ -156,7 +156,7 @@ export default function ServerList() {
       }
       setStatuses(statusMap)
     } catch (e) {
-      message.error('加载服务器列表失败')
+      message.error(`加载服务器列表失败：${(e as any)?.message || '请检查网络连接'}`)
       setServers([])
     } finally {
       setLoading(false)
@@ -258,7 +258,7 @@ export default function ServerList() {
       setSshKeyType('key')
       loadServers()
     } catch (e) {
-      message.error('添加失败')
+      message.error(`添加服务器失败：${(e as any)?.message || '请检查填写内容'}`)
     }
   }
 
@@ -268,7 +268,7 @@ export default function ServerList() {
       message.success('删除成功')
       loadServers()
     } catch (e) {
-      message.error('删除失败')
+      message.error(`删除失败：${(e as any)?.message || '请稍后重试'}`)
     }
   }
 
@@ -279,7 +279,7 @@ export default function ServerList() {
       await serverAPI.restartXray(serverId)
       message.success('xray 已重启')
     } catch {
-      message.error('重启失败')
+      message.error(`xray 重启失败：${(e as any)?.message || '请稍后重试'}`)
     } finally {
       setRestartingXray(null)
     }
@@ -518,12 +518,13 @@ export default function ServerList() {
       title: '操作',
       render: (_: any, record: Server) => (
         <Space>
-          <Button size="small" type="primary" icon={<CloudUploadOutlined />} title="安装 Agent" onClick={(e) => { e.stopPropagation(); handleInstallClick(record); }} />
-          <Button size="small" icon={<EditOutlined />} title="编辑" onClick={(e) => { e.stopPropagation(); handleEditClick(record); }} />
-          <Button size="small" icon={<TeamOutlined />} title="账号管理" onClick={(e) => { e.stopPropagation(); handleOpenAccountModal(record); }} />
+          <Button size="small" type="primary" icon={<CloudUploadOutlined />} aria-label="安装 Agent" title="安装 Agent" onClick={(e) => { e.stopPropagation(); handleInstallClick(record); }} />
+          <Button size="small" icon={<EditOutlined />} aria-label="编辑服务器" title="编辑" onClick={(e) => { e.stopPropagation(); handleEditClick(record); }} />
+          <Button size="small" icon={<TeamOutlined />} aria-label="账号管理" title="账号管理" onClick={(e) => { e.stopPropagation(); handleOpenAccountModal(record); }} />
           <Button
             size="small"
             icon={<ReloadOutlined />}
+            aria-label="重启 xray"
             title="重启 xray"
             loading={restartingXray === record.id}
             onClick={(e) => handleRestartXray(record.id, e)}
@@ -531,12 +532,13 @@ export default function ServerList() {
           <Button
             size="small"
             icon={<UploadOutlined />}
+            aria-label="同步 xray 配置"
             title="同步 xray 配置"
             loading={syncingXray === record.id}
             onClick={(e) => handleSyncXray(record.id, e)}
           />
           <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} title="删除" onClick={(e) => e.stopPropagation()} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label="删除服务器" title="删除" onClick={(e) => e.stopPropagation()} />
           </Popconfirm>
         </Space>
       ),
@@ -546,25 +548,25 @@ export default function ServerList() {
   return (
     <div className="animate-in">
       {/* Page Header */}
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div className="page-header-row">
         <div>
           <h1>服务器管理</h1>
           <p>管理您的 V2ray 服务器和账号</p>
         </div>
-        <Button type="primary" onClick={() => setModalVisible(true)} style={{ marginTop: 8 }}>+ 添加服务器</Button>
+        <Button type="primary" className="page-action" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
       </div>
 
       {/* Stats Grid */}
       <div className="stats-grid">
         <div className="stat-card animate-in animate-delay-1">
-          <div className="stat-icon rose">⚡</div>
+          <div className="stat-icon rose"><HddOutlined style={{ fontSize: 22, color: 'var(--morandi-dusty-rose)' }} /></div>
           <div className="stat-content">
             <h3>{servers.length}</h3>
             <p>服务器总数</p>
           </div>
         </div>
         <div className="stat-card animate-in animate-delay-2">
-          <div className="stat-icon sage">✓</div>
+          <div className="stat-icon sage"><CheckCircleOutlined style={{ fontSize: 22, color: 'var(--morandi-sage)' }} /></div>
           <div className="stat-content">
             <h3>{servers.filter(s => s.status === 'online').length}</h3>
             <p>在线服务器</p>
@@ -594,7 +596,7 @@ export default function ServerList() {
                     <div className="chart-area">
                       <PlotlyLine
                         data={status.metrics.cpu.map((p: MetricPoint) => ({ time: p.time, value: p.value }))}
-                        color="#1677FF"
+                        color="#9DB4C0"
                         type="percent"
                       />
                     </div>
@@ -605,7 +607,7 @@ export default function ServerList() {
                     <div className="chart-area">
                       <PlotlyLine
                         data={status.metrics.memory.map((p: MetricPoint) => ({ time: p.time, value: p.value }))}
-                        color="#722ED1"
+                        color="#B4A7C7"
                         type="percent"
                       />
                     </div>
@@ -616,7 +618,7 @@ export default function ServerList() {
                     <div className="chart-area">
                       <PlotlyLine
                         data={status.metrics.bandwidth_in.map((p: BandwidthPoint) => ({ time: p.time, value: p.value }))}
-                        color="#1677FF"
+                        color="#A8B5A0"
                         type="bandwidth"
                       />
                     </div>
@@ -627,7 +629,7 @@ export default function ServerList() {
                     <div className="chart-area">
                       <PlotlyLine
                         data={status.metrics.bandwidth_out.map((p: BandwidthPoint) => ({ time: p.time, value: p.value }))}
-                        color="#FA541C"
+                        color="#C4836A"
                         type="bandwidth"
                       />
                     </div>
@@ -760,7 +762,7 @@ export default function ServerList() {
           </Button>,
         ]}
       >
-        {installing && <div style={{ color: '#888', marginBottom: 8 }}>正在安装，请稍候...（这可能需要10-30秒）</div>}
+        {installing && <div style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>正在安装，请稍候...（这可能需要10-30秒）</div>}
         <pre
           ref={installOutputRef}
           style={{
@@ -909,7 +911,7 @@ export default function ServerList() {
                                 >
                                   <span style={{ fontWeight: 500 }}>{sub.name}</span>
                                   {sub.remark && (
-                                    <span style={{ color: '#999', marginLeft: 6, fontSize: 12 }}>
+                                    <span style={{ color: 'var(--text-secondary)', marginLeft: 6, fontSize: 12 }}>
                                       {sub.remark}
                                     </span>
                                   )}
@@ -918,7 +920,7 @@ export default function ServerList() {
                               </div>
                             ))}
                             {assignedSubs.length === 0 && !assignLoading && (
-                              <div style={{ textAlign: 'center', color: '#999', padding: '24px 0', fontSize: 13 }}>
+                              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px 0', fontSize: 13 }}>
                                 暂无已关联订阅
                               </div>
                             )}
@@ -983,13 +985,13 @@ export default function ServerList() {
                                   >
                                     <span style={{ fontWeight: 500 }}>{sub.name}</span>
                                     {sub.remark && (
-                                      <span style={{ color: '#999', marginLeft: 6, fontSize: 12 }}>
+                                      <span style={{ color: 'var(--text-secondary)', marginLeft: 6, fontSize: 12 }}>
                                         {sub.remark}
                                       </span>
                                     )}
                                   </Checkbox>
                                   {status === 'existing' && (
-                                    <Tag color="blue">已有账号 · {existingAcc?.email}</Tag>
+                                    <Tag style={{ background: 'rgba(168,181,160,0.15)', color: '#4d6e48', border: '1px solid rgba(168,181,160,0.4)', borderRadius: 6 }}>已有账号 · {existingAcc?.email}</Tag>
                                   )}
                                   {status === 'new' && (
                                     <Tag color="default">将新建 · {sub.name}</Tag>
@@ -998,7 +1000,7 @@ export default function ServerList() {
                               )
                             })}
                             {selectableSubs.length === 0 && !assignLoading && (
-                              <div style={{ textAlign: 'center', color: '#999', padding: '24px 0', fontSize: 13 }}>
+                              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px 0', fontSize: 13 }}>
                                 全部已关联
                               </div>
                             )}
@@ -1082,19 +1084,19 @@ export default function ServerList() {
         }
         .metric-cell {
           padding: 12px;
-          border-right: 1px solid #E8E8E8;
+          border-right: 1px solid var(--border-color);
         }
         .metric-cell:last-child { border-right: none; }
         .metric-label {
           font-size: 12px;
-          color: #595959;
+          color: var(--text-secondary);
           margin-bottom: 4px;
         }
         .metric-value {
           font-size: 18px;
           font-weight: 500;
           font-family: 'JetBrains Mono', monospace;
-          color: #262626;
+          color: var(--text-primary);
           margin-bottom: 8px;
         }
         .chart-area {
@@ -1103,7 +1105,7 @@ export default function ServerList() {
         .empty-monitor {
           padding: 40px;
           text-align: center;
-          color: #8C8C8C;
+          color: var(--text-muted);
           font-size: 13px;
         }
       `}</style>
@@ -1155,12 +1157,12 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
         margin: { t: 5, r: 5, b: 24, l: 38 },
         paper_bgcolor: 'transparent',
         plot_bgcolor: 'transparent',
-        font: { color: '#8C8C8C', family: 'Noto Sans SC, sans-serif', size: 9 },
+        font: { color: '#9E9A93', family: 'Noto Sans SC, sans-serif', size: 9 },
         xaxis: {
           showgrid: false,
-          gridcolor: '#F0F0F0',
-          linecolor: '#D9D9D9',
-          tickcolor: '#D9D9D9',
+          gridcolor: '#EDE8E0',
+          linecolor: '#E5E0D8',
+          tickcolor: '#E5E0D8',
           ticks: 'outside',
           tickfont: { size: 9 },
           showline: true,
@@ -1169,7 +1171,7 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
         },
         yaxis: {
           showgrid: true,
-          gridcolor: '#F5F5F5',
+          gridcolor: '#F0EDE8',
           linecolor: 'transparent',
           tickcolor: 'transparent',
           ticks: 'outside',
@@ -1184,7 +1186,7 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
           bgcolor: '#fff',
           bordercolor: color,
           borderwidth: 1,
-          font: { size: 11, color: '#595959' },
+          font: { size: 11, color: '#6B6760' },
         },
       }
 
@@ -1207,7 +1209,7 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
   }, [data, color, type])
 
   if (!data || data.length === 0) {
-    return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8C8C8C', fontSize: 11 }}>暂无数据</div>
+    return <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9E9A93', fontSize: 11 }}>暂无数据</div>
   }
 
   return <div ref={containerRef} style={{ width: '100%', height: '100%' }} />

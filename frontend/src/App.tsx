@@ -1,15 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import { Layout, Spin, Dropdown, Avatar } from 'antd'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { UserOutlined, LogoutOutlined } from '@ant-design/icons'
-import ServerList from './pages/servers'
-import SubscriptionList from './pages/subscriptions'
-import Logs from './pages/logs'
-import Settings from './pages/settings'
-import ClientDownload from './pages/clients'
 import LoginPage from './pages/login'
 import SetupPage from './pages/setup'
 import { authAPI } from './services/api'
+
+const ServerList = lazy(() => import('./pages/servers'))
+const SubscriptionList = lazy(() => import('./pages/subscriptions'))
+const Logs = lazy(() => import('./pages/logs'))
+const Settings = lazy(() => import('./pages/settings'))
+const ClientDownload = lazy(() => import('./pages/clients'))
 
 const { Content } = Layout
 
@@ -178,14 +179,16 @@ function App() {
 
         <Layout className="app-main" style={{ marginLeft: collapsed ? 72 : 240 }}>
           <Content className="app-content" style={{ padding: '28px 32px' }}>
-            <Routes>
-              <Route path="/" element={<Navigate to="/servers" replace />} />
-              <Route path="/servers" element={<ServerList />} />
-              <Route path="/subscriptions" element={<SubscriptionList />} />
-              <Route path="/logs" element={<Logs />} />
-              <Route path="/clients" element={<ClientDownload />} />
-              <Route path="/settings" element={<Settings />} />
-            </Routes>
+            <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spin size="large" /></div>}>
+              <Routes>
+                <Route path="/" element={<Navigate to="/servers" replace />} />
+                <Route path="/servers" element={<ServerList />} />
+                <Route path="/subscriptions" element={<SubscriptionList />} />
+                <Route path="/logs" element={<Logs />} />
+                <Route path="/clients" element={<ClientDownload />} />
+                <Route path="/settings" element={<Settings />} />
+              </Routes>
+            </Suspense>
           </Content>
         </Layout>
       </Layout>

@@ -47,7 +47,7 @@ export default function SetupPage({ onComplete }: Props) {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: '#3d3a36', margin: 0 }}>
             V2<span style={{ color: '#c9a9a6' }}>Dash</span>
           </h1>
-          <p style={{ color: '#9e9a93', marginTop: 8 }}>首次使用，请创建管理员账号</p>
+          <p style={{ color: 'var(--text-secondary)', marginTop: 8 }}>首次使用，请创建管理员账号</p>
         </div>
         <Form form={form} onFinish={handleSetup} layout="vertical" size="large">
           <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名（至少3个字符）', min: 3 }]}>

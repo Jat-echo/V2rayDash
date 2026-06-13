@@ -555,7 +555,7 @@ export default function ClientDownload() {
   }
 
   return (
-    <div style={{ maxWidth: 1060 }}>
+    <div className="animate-in" style={{ maxWidth: 1060 }}>
 
       {/* ── 页面标题 ── */}
       <div className="page-header">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card, Tag, Checkbox, Divider, Progress } from 'antd'
 import type { SorterResult } from 'antd/es/table/interface'
-import { CopyOutlined, HolderOutlined, LinkOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons'
+import { CopyOutlined, HolderOutlined, LinkOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ProfileOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -69,7 +69,7 @@ export default function SubscriptionList() {
       setAccounts(accountMap)
       setServers(srvs || [])
     } catch (e) {
-      message.error('加载失败')
+      message.error(`加载失败：${(e as any)?.message || '请检查网络连接'}`)
       setSubscriptions([])
       setServers([])
     } finally {
@@ -113,7 +113,7 @@ export default function SubscriptionList() {
         // 复制失败不阻断主流程
       }
     } catch (e) {
-      message.error('添加失败')
+      message.error(`添加订阅失败：${(e as any)?.message || '请检查填写内容'}`)
     }
   }
 
@@ -296,7 +296,7 @@ export default function SubscriptionList() {
       setAddAccountModalVisible(false)
       loadData()
     } catch (e) {
-      message.error('添加失败')
+      message.error(`添加账号失败：${(e as any)?.message || '请稍后重试'}`)
     }
   }
 
@@ -329,7 +329,9 @@ export default function SubscriptionList() {
         return (
           <Space size={4} wrap>
             {record.accounts.map(acc => (
-              <Tag key={acc.id} color="blue"><FlagName name={acc.server_name} countryCode={acc.server_country_code} /> / {acc.email}</Tag>
+              <Tag key={acc.id} style={{ background: 'rgba(157,180,192,0.15)', color: '#3d6475', border: '1px solid rgba(157,180,192,0.4)', borderRadius: 6 }}>
+                <FlagName name={acc.server_name} countryCode={acc.server_country_code} /> / {acc.email}
+              </Tag>
             ))}
           </Space>
         )
@@ -356,7 +358,7 @@ export default function SubscriptionList() {
           <div style={{ minWidth: 140 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
               <span>{formatBytes(used)}</span>
-              <span style={{ color: '#999' }}>{limit > 0 ? formatBytes(limit) : '无限'}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>{limit > 0 ? formatBytes(limit) : '无限'}</span>
             </div>
             {limit > 0 && (
               <Progress
@@ -399,25 +401,25 @@ export default function SubscriptionList() {
   return (
     <div className="animate-in">
       {/* Page Header */}
-      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      <div className="page-header-row">
         <div>
           <h1>订阅管理</h1>
           <p>创建和管理用户的订阅链接，支持多服务器账号</p>
         </div>
-        <Button type="primary" onClick={openModal} style={{ marginTop: 8 }}>+ 添加订阅</Button>
+        <Button type="primary" className="page-action" onClick={openModal}>+ 添加订阅</Button>
       </div>
 
       {/* Stats Grid */}
       <div className="stats-grid">
         <div className="stat-card animate-in animate-delay-1">
-          <div className="stat-icon rose">📋</div>
+          <div className="stat-icon rose"><ProfileOutlined style={{ fontSize: 22, color: 'var(--morandi-dusty-rose)' }} /></div>
           <div className="stat-content">
             <h3>{subscriptions.length}</h3>
             <p>订阅总数</p>
           </div>
         </div>
         <div className="stat-card animate-in animate-delay-2">
-          <div className="stat-icon sage">✓</div>
+          <div className="stat-icon sage"><CheckCircleOutlined style={{ fontSize: 22, color: 'var(--morandi-sage)' }} /></div>
           <div className="stat-content">
             <h3>{subscriptions.filter(s => s.enable).length}</h3>
             <p>启用中</p>
@@ -522,7 +524,7 @@ export default function SubscriptionList() {
                           ))}
                         </Select>
                         {isAutoCreate && (
-                          <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+                          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
                             将自动创建名为「订阅名称」的 VLESS Reality 账号
                           </div>
                         )}
@@ -563,7 +565,7 @@ export default function SubscriptionList() {
             {currentLink ? (
               <>
                 <QRCodeDisplay link={currentLink} label={currentSubInfo?.name || '订阅链接'} />
-                <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
                   包含 {currentSubInfo?.accounts?.length || 0} 个节点，客户端扫码导入全部节点
                 </div>
               </>
@@ -612,7 +614,7 @@ export default function SubscriptionList() {
           </div>
 
           {managedAccounts.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#999' }}>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
               暂无账号，请点击上方按钮添加
             </div>
           ) : (
@@ -650,7 +652,7 @@ export default function SubscriptionList() {
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
               {orphanedAccounts.map(a => (
                 <div key={a.id} style={{ padding: '4px 0', fontSize: 13 }}>
-                  <Tag color="blue" style={{ marginRight: 6 }}><FlagName name={a.server_name} countryCode={a.server_country_code} /></Tag>
+                  <Tag style={{ marginRight: 6, background: 'rgba(157,180,192,0.15)', color: '#3d6475', border: '1px solid rgba(157,180,192,0.4)', borderRadius: 6 }}><FlagName name={a.server_name} countryCode={a.server_country_code} /></Tag>
                   {a.email}
                 </div>
               ))}
@@ -690,7 +692,7 @@ export default function SubscriptionList() {
               }}>
                 <strong><FlagName name={server.name} /></strong> ({server.ip})
                 {hasLinkedAccountFromServer ? (
-                  <div style={{ marginTop: 8, color: '#999' }}>已添加此服务器的账号</div>
+                  <div style={{ marginTop: 8, color: 'var(--text-secondary)' }}>已添加此服务器的账号</div>
                 ) : (
                   <div style={{ marginTop: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -705,7 +707,7 @@ export default function SubscriptionList() {
                       <div style={{ borderTop: '1px dashed #f0f0f0', paddingTop: 6, marginTop: 6 }}>
                         {availableAccounts.map(acc => (
                           <div key={acc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                            <span style={{ color: '#555', fontSize: 13 }}>{acc.email} {acc.enabled ? '' : '(已禁用)'}</span>
+                            <span style={{ color: 'var(--text-primary)', fontSize: 13 }}>{acc.email} {acc.enabled ? '' : '(已禁用)'}</span>
                             <Button size="small" onClick={() => handleAddAccount(server.id, acc.id)}>
                               关联
                             </Button>
@@ -878,19 +880,17 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
       {/* Header: title + legend (centered) + range tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, padding: '0 16px' }}>
         <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>流量使用趋势</span>
-        <span style={{ color: '#999', fontSize: 13, flexShrink: 0 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
+        <span style={{ color: 'var(--text-secondary)', fontSize: 13, flexShrink: 0 }}>时间段内消耗: {formatBytes(totalDelta)}</span>
         {/* Node legend centered */}
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '4px 16px' }}>
           {leftItems.map(item => (
-            <div key={item.key} style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              paddingLeft: 7, borderLeft: `3px solid ${item.color}`,
-            }}>
-              <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: '0 4px', flexShrink: 0 }}>
+            <div key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: item.color, flexShrink: 0, display: 'inline-block' }} />
+              <Tag style={{ margin: 0, fontSize: 11, padding: '0 4px', flexShrink: 0, background: 'rgba(157,180,192,0.15)', color: '#3d6475', border: '1px solid rgba(157,180,192,0.4)', borderRadius: 4 }}>
                 <FlagName name={item.serverName} countryCode={item.serverCountryCode} />
               </Tag>
-              <span style={{ color: '#555', fontSize: 12 }}>{item.email}</span>
-              <span style={{ color: '#999', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{formatBytes(item.trafficUsed)}</span>
+              <span style={{ color: 'var(--text-primary)', fontSize: 12 }}>{item.email}</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>{formatBytes(item.trafficUsed)}</span>
             </div>
           ))}
         </div>
@@ -907,7 +907,7 @@ function TrafficDetail({ subId, accounts }: { subId: string; accounts?: AccountW
       {/* Chart full width — wrapRef measures actual container pixel width */}
       <div ref={wrapRef} style={{ width: '100%' }}>
           {!hasData || svgW === 0 ? (
-            <div style={{ color: '#bbb', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
+            <div style={{ color: 'var(--text-secondary)', padding: '24px 0', textAlign: 'center', fontSize: 13 }}>
               {!hasData ? '暂无流量数据（切换时间范围或等待下一次心跳上报后生效）' : ''}
             </div>
           ) : (
@@ -1049,7 +1049,7 @@ function SortableItem({ id, account, onRemove }: { id: string; account: AccountW
         </div>
         <div>
           <div style={{ fontWeight: 'bold' }}><FlagName name={account.server_name} countryCode={account.server_country_code} /> / {account.email}</div>
-          <div style={{ fontSize: 12, color: '#999' }}>ID: {account.id.substring(0, 8)}...</div>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>ID: {account.id.substring(0, 8)}...</div>
         </div>
       </div>
       <Button size="small" danger onClick={onRemove}>移除</Button>
@@ -1094,7 +1094,7 @@ function QRCodeDisplay({ link, label }: { link: string; label: string }) {
             alt="QR Code"
             style={{ width: 200, height: 200, border: '1px solid #d9d9d9', borderRadius: 8 }}
           />
-          <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>{label}</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>{label}</div>
         </div>
       )}
     </div>

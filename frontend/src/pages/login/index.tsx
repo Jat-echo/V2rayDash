@@ -42,7 +42,7 @@ export default function LoginPage({ onLogin }: Props) {
           <h1 style={{ fontSize: 28, fontWeight: 700, color: '#3d3a36', margin: 0 }}>
             V2<span style={{ color: '#c9a9a6' }}>Dash</span>
           </h1>
-          <p style={{ color: '#9e9a93', marginTop: 8, fontSize: 14 }}>请登录以继续</p>
+          <p style={{ color: 'var(--text-secondary)', marginTop: 8, fontSize: 14 }}>请登录以继续</p>
         </div>
         <Form form={form} onFinish={handleLogin} layout="vertical" size="large">
           <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
