@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented, Tabs, Spin, Checkbox } from 'antd'
-import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, SyncOutlined } from '@ant-design/icons'
+import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, UploadOutlined } from '@ant-design/icons'
 import { serverAPI, accountAPI, logAPI, subscriptionAPI, Server, Account, Subscription, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
@@ -530,7 +530,7 @@ export default function ServerList() {
           />
           <Button
             size="small"
-            icon={<SyncOutlined />}
+            icon={<UploadOutlined />}
             title="同步 xray 配置"
             loading={syncingXray === record.id}
             onClick={(e) => handleSyncXray(record.id, e)}
@@ -1119,7 +1119,7 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
       return y.toFixed(2) + '%'
     }
     if (type === 'bandwidth') {
-      const bytesPerSec = y / 30
+      const bytesPerSec = y / 60
       if (bytesPerSec === 0) return '0 B/s'
       const k = 1024
       const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s']

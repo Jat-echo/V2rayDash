@@ -523,6 +523,7 @@ apply_explicit_args() {
     if [[ -n "${explicit_port}" ]]; then
         singBoxVLESSRealityVisionPort="${explicit_port}"
         singBoxVLESSVisionPort="${explicit_port}"
+        # xray Reality port is applied directly in initXrayRealityPort via explicit_port check
     fi
 
     # UUID
@@ -9918,6 +9919,13 @@ initRealityClientServersName() {
 }
 # 初始化reality端口
 initXrayRealityPort() {
+    # Use CLI-provided port directly, skip all interactive prompts
+    if [[ -n "${explicit_port}" ]]; then
+        realityPort="${explicit_port}"
+        allowPort "${realityPort}"
+        echoContent yellow "\n ---> 端口: ${realityPort}"
+        return
+    fi
     if [[ -n "${xrayVLESSRealityPort}" && -z "${lastInstallationConfig}" ]]; then
         read -r -p "读取到上次安装记录，是否使用上次安装时的端口 ？[y/n]:" historyRealityPortStatus
         if [[ "${historyRealityPortStatus}" == "y" ]]; then

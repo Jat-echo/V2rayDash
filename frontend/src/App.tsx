@@ -138,8 +138,9 @@ function App() {
             zIndex: 100,
           }}
         >
-          <div className="app-logo">
-            <h1>V2<span>Dash</span></h1>
+          <div className="app-logo" style={{ display: 'flex', alignItems: 'center', gap: collapsed ? 0 : 10, justifyContent: collapsed ? 'center' : 'flex-start' }}>
+            <img src="/favicon.svg" alt="logo" style={{ width: 28, height: 28, flexShrink: 0, borderRadius: 6 }} />
+            {!collapsed && <h1 style={{ margin: 0 }}>V2ray<span>Dash</span></h1>}
           </div>
           <nav className="app-nav">
             {navItems.map(item => (

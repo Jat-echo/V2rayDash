@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card, Tag, Checkbox, Divider, Progress } from 'antd'
-import { CopyOutlined, QrcodeOutlined, HolderOutlined, LinkOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import type { SorterResult } from 'antd/es/table/interface'
+import { CopyOutlined, HolderOutlined, LinkOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -40,6 +41,8 @@ export default function SubscriptionList() {
   const [orphanedAccounts, setOrphanedAccounts] = useState<AccountWithServer[]>([])
   const [alsoDeleteAccounts, setAlsoDeleteAccounts] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [searchText, setSearchText] = useState('')
+  const [sortedInfo, setSortedInfo] = useState<SorterResult<SubscriptionWithAccounts>>({})
 
   useEffect(() => {
     loadData()
@@ -91,7 +94,7 @@ export default function SubscriptionList() {
           return { server_id: m.server_id, account_id: newAcc.id }
         })
       )
-      await subscriptionAPI.create({
+      const newSub = await subscriptionAPI.create({
         name: values.name,
         remark: values.remark || '',
         traffic_limit: values.traffic_limit ? values.traffic_limit * 1024 * 1024 * 1024 : 0,
@@ -102,6 +105,13 @@ export default function SubscriptionList() {
       form.resetFields()
       setSelectedMappings([])
       loadData()
+      // 自动复制订阅链接
+      try {
+        const { link } = await subscriptionAPI.getLink(newSub.id)
+        copyToClipboard(link)
+      } catch {
+        // 复制失败不阻断主流程
+      }
     } catch (e) {
       message.error('添加失败')
     }
@@ -290,6 +300,14 @@ export default function SubscriptionList() {
     }
   }
 
+  const filteredSubscriptions = useMemo(() =>
+    subscriptions.filter(s => {
+      if (!searchText) return true
+      const q = searchText.toLowerCase()
+      return s.name.toLowerCase().includes(q) || (s.remark || '').toLowerCase().includes(q)
+    }),
+  [subscriptions, searchText])
+
   const columns = [
     {
       title: '名称',
@@ -301,7 +319,7 @@ export default function SubscriptionList() {
         </div>
       ),
     },
-    { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v ? v.substring(0, 8) + '...' : '-' },
+    { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v || '-' },
     {
       title: '服务器/账号',
       render: (_: any, record: SubscriptionWithAccounts) => {
@@ -309,7 +327,7 @@ export default function SubscriptionList() {
           return <Tag color="default">暂无可用节点，请联系管理员</Tag>
         }
         return (
-          <Space direction="vertical" size={2}>
+          <Space size={4} wrap>
             {record.accounts.map(acc => (
               <Tag key={acc.id} color="blue"><FlagName name={acc.server_name} countryCode={acc.server_country_code} /> / {acc.email}</Tag>
             ))}
@@ -318,10 +336,18 @@ export default function SubscriptionList() {
       }
     },
     {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      render: (v: string) => v ? new Date(v).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '-',
+    },
+    {
+      key: 'traffic_used',
       title: '流量使用',
       width: 200,
       sorter: (a: SubscriptionWithAccounts, b: SubscriptionWithAccounts) =>
         (a.traffic_used || 0) - (b.traffic_used || 0),
+      sortOrder: sortedInfo.columnKey === 'traffic_used' ? sortedInfo.order : null,
+      sortDirections: ['descend', 'ascend'] as ('descend' | 'ascend')[],
       render: (_: any, record: SubscriptionWithAccounts) => {
         const used = record.traffic_used || 0
         const limit = record.traffic_limit || 0
@@ -401,12 +427,23 @@ export default function SubscriptionList() {
 
       {/* Subscription Table */}
       <Card className="morandi-card">
+        <div style={{ marginBottom: 16 }}>
+          <Input
+            placeholder="搜索订阅名称或备注..."
+            prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            allowClear
+            style={{ maxWidth: 320 }}
+          />
+        </div>
         <Table
           columns={columns}
-          dataSource={subscriptions}
+          dataSource={filteredSubscriptions}
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
+          onChange={(_, __, sorter) => setSortedInfo(Array.isArray(sorter) ? (sorter[0] ?? {}) : sorter)}
           expandable={{ expandedRowRender: (record) => <TrafficDetail subId={record.id} accounts={record.accounts} /> }}
         />
       </Card>

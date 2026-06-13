@@ -10293,7 +10293,7 @@ install_agent() {
     # 下载 Agent 二进制
     local agent_url="${agent_control_center_url}/agents/latest/linux_$(uname -m)/agent"
     local agent_bin="/usr/local/bin/v2ray-agent"
-    local report_interval=30
+    local report_interval=60
     if [[ -n "${explicit_report_interval}" ]]; then
         report_interval="${explicit_report_interval}"
     fi

@@ -122,6 +122,6 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"server_id":        serverID,
 		"control_center":   publicURL,
-		"report_interval":  30,
+		"report_interval":  60,
 	})
 }

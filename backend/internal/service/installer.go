@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -186,6 +187,8 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 		fmt.Fprintf(output, "[%s]   Port: %d\n", time.Now().Format("15:04:05"), realityPort)
 	}
 
+	runPostInstallSteps(sshClient, output, config)
+
 	return &InstallResult{
 		Success:       true,
 		GeneratedUUID:  generatedUUID,
@@ -308,6 +311,8 @@ func (i *Installer) InstallStreaming(w io.Writer, flusher http.Flusher, config *
 		fmt.Fprintf(output, "[%s]   PublicKey: %s\n", time.Now().Format("15:04:05"), realityConfig.PublicKey)
 		fmt.Fprintf(output, "[%s]   Port: %d\n", time.Now().Format("15:04:05"), realityPort)
 	}
+
+	runPostInstallSteps(sshClient, output, config)
 
 	return &InstallResult{
 		Success:       true,
@@ -474,4 +479,102 @@ func (i *Installer) ensureScript(client *ssh.SSHClient, output io.Writer, remote
 	}
 	fmt.Fprintf(output, "[%s] 脚本上传成功\n", time.Now().Format("15:04:05"))
 	return nil
+}
+
+// xrayStatsScript 是注入到远程服务器的 Python3 脚本，用于配置 xray 统计 API。
+// 脚本写入 00_api.json，并将 statsUser 标志合并到 12_policy.json，
+// 同时在 09_routing.json 头部插入 api 路由规则（幂等，已存在则跳过）。
+const xrayStatsScript = `#!/usr/bin/env python3
+import json, os, sys
+
+conf = "/etc/v2ray-agent/xray/conf"
+if not os.path.isdir(conf):
+    sys.exit("conf dir not found: " + conf)
+
+policy_path = os.path.join(conf, "12_policy.json")
+routing_path = os.path.join(conf, "09_routing.json")
+for p in [policy_path, routing_path]:
+    if not os.path.exists(p):
+        sys.exit("required file not found: " + p)
+
+# 1. 写入 00_api.json
+api = {
+    "stats": {},
+    "api": {"tag": "api", "services": ["StatsService"]},
+    "inbounds": [{
+        "listen": "127.0.0.1",
+        "port": 10085,
+        "protocol": "dokodemo-door",
+        "settings": {"address": "127.0.0.1"},
+        "tag": "api-in"
+    }]
+}
+with open(os.path.join(conf, "00_api.json"), "w") as f:
+    json.dump(api, f, indent=2)
+
+# 2. 合并 statsUser 字段到 12_policy.json
+with open(policy_path) as f:
+    p = json.load(f)
+for level in p.get("policy", {}).get("levels", {}).values():
+    level["statsUserUplink"] = True
+    level["statsUserDownlink"] = True
+p.setdefault("policy", {}).setdefault("system", {}).update({
+    "statsInboundUplink": True,
+    "statsInboundDownlink": True
+})
+with open(policy_path, "w") as f:
+    json.dump(p, f, indent=2)
+
+# 3. 在 09_routing.json 头部插入 api 路由规则（幂等）
+with open(routing_path) as f:
+    r = json.load(f)
+api_rule = {"type": "field", "inboundTag": ["api-in"], "outboundTag": "api"}
+rules = r.setdefault("routing", {}).setdefault("rules", [])
+if not any(rule.get("outboundTag") == "api" for rule in rules):
+    r["routing"]["rules"] = [api_rule] + rules
+with open(routing_path, "w") as f:
+    json.dump(r, f, indent=2)
+
+print("stats config injected")
+`
+
+// xrayStatsScriptEncoded 是 xrayStatsScript 的 base64 编码，包级别预计算，避免每次调用重复计算。
+var xrayStatsScriptEncoded = base64.StdEncoding.EncodeToString([]byte(xrayStatsScript))
+
+// injectXrayStatsConfig 将 xray 统计 API 配置注入到远程服务器并重启 xray。
+// 通过管道将 base64 解码后的脚本直接传给 python3，单次 SSH 通道完成所有操作。
+func injectXrayStatsConfig(client *ssh.SSHClient, output io.Writer) error {
+	cmd := fmt.Sprintf("printf '%%s' '%s' | base64 -d | python3 && systemctl restart xray", xrayStatsScriptEncoded)
+	if err := client.Execute(cmd, output, output); err != nil {
+		return fmt.Errorf("注入xray统计配置失败: %v", err)
+	}
+	return nil
+}
+
+// runPostInstallSteps 在安装完成后注入 xray 统计配置并配置 journald 日志限制，两者均为非致命操作。
+func runPostInstallSteps(sshClient *ssh.SSHClient, output io.Writer, config *InstallConfig) {
+	if config.Core != "sing-box" {
+		fmt.Fprintf(output, "[%s] 正在注入xray统计API配置...\n", time.Now().Format("15:04:05"))
+		if err := injectXrayStatsConfig(sshClient, output); err != nil {
+			fmt.Fprintf(output, "[%s] 警告: 统计API配置失败: %v\n", time.Now().Format("15:04:05"), err)
+		} else {
+			fmt.Fprintf(output, "[%s] ✓ xray统计API已配置\n", time.Now().Format("15:04:05"))
+		}
+	}
+	fmt.Fprintf(output, "[%s] 正在配置journald日志限制...\n", time.Now().Format("15:04:05"))
+	if err := configureJournald(sshClient, output); err != nil {
+		fmt.Fprintf(output, "[%s] 警告: journald配置失败: %v\n", time.Now().Format("15:04:05"), err)
+	} else {
+		fmt.Fprintf(output, "[%s] ✓ journald日志已限制为200M\n", time.Now().Format("15:04:05"))
+	}
+}
+
+// configureJournald 在远程服务器上设置 journald 日志大小上限（幂等）。
+// 限制为 200M，并立即 vacuum 清理超出部分。
+func configureJournald(client *ssh.SSHClient, output io.Writer) error {
+	cmd := `{ grep -q '^SystemMaxUse=' /etc/systemd/journald.conf 2>/dev/null || echo 'SystemMaxUse=200M' >> /etc/systemd/journald.conf; } &&` +
+		` { grep -q '^SystemKeepFree=' /etc/systemd/journald.conf 2>/dev/null || echo 'SystemKeepFree=100M' >> /etc/systemd/journald.conf; } &&` +
+		` systemctl restart systemd-journald &&` +
+		` journalctl --vacuum-size=200M`
+	return client.Execute(cmd, output, output)
 }

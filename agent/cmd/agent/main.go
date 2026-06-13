@@ -24,7 +24,7 @@ func main() {
 	reporterClient := reporter.New(cfg.ControlCenterURL, cfg.ServerID, cfg.PSK)
 	col := collector.New()
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	// 立即执行一次
