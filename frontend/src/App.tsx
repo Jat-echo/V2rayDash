@@ -8,7 +8,6 @@ import { authAPI } from './services/api'
 
 const ServerList = lazy(() => import('./pages/servers'))
 const SubscriptionList = lazy(() => import('./pages/subscriptions'))
-const Logs = lazy(() => import('./pages/logs'))
 const Settings = lazy(() => import('./pages/settings'))
 const ClientDownload = lazy(() => import('./pages/clients'))
 
@@ -30,13 +29,6 @@ const SubIcon = () => (
   </svg>
 )
 
-const LogIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-    <path d="M14 2v6h6M8 13h8M8 17h8M8 9h2"/>
-  </svg>
-)
-
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     <circle cx="12" cy="12" r="3"/>
@@ -55,7 +47,6 @@ const ClientIcon = () => (
 const navItems = [
   { path: '/servers', label: '服务器', icon: <ServerIcon /> },
   { path: '/subscriptions', label: '订阅', icon: <SubIcon /> },
-  { path: '/logs', label: '日志', icon: <LogIcon /> },
   { path: '/clients', label: '客户端', icon: <ClientIcon /> },
   { path: '/settings', label: '设置', icon: <SettingsIcon /> },
 ]
@@ -184,7 +175,6 @@ function App() {
                 <Route path="/" element={<Navigate to="/servers" replace />} />
                 <Route path="/servers" element={<ServerList />} />
                 <Route path="/subscriptions" element={<SubscriptionList />} />
-                <Route path="/logs" element={<Logs />} />
                 <Route path="/clients" element={<ClientDownload />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>

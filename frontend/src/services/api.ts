@@ -107,17 +107,6 @@ export const accountAPI = {
     api.post<{ message: string; accounts: Account[] }>(`/servers/${serverId}/accounts/import`),
 }
 
-export interface OperationLog {
-  id: string
-  operator: string
-  action: string
-  target_type: string
-  target_id: string
-  detail: Record<string, any>
-  ip: string
-  created_at: string
-}
-
 export interface MetricPoint {
   time: string
   value: number
@@ -210,8 +199,6 @@ export const subscriptionAPI = {
 }
 
 export const logAPI = {
-  list: (params?: { start_time?: string; end_time?: string; target_type?: string }) =>
-    api.get<OperationLog[]>('/logs/operation', { params }).then(r => r.data),
   getNodeStatuses: (timeRange: string = '1h', serverId?: string): Promise<NodeStatusResponse[]> => {
   const params = new URLSearchParams({ time_range: timeRange })
   if (serverId) params.append('server_id', serverId)
