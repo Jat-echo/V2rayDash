@@ -589,7 +589,7 @@ export default function ServerList() {
           <h1>服务器管理</h1>
           <p>管理您的 V2ray 服务器和账号</p>
         </div>
-        <Space>
+        <Space style={{ marginTop: 6 }}>
           <Button
             loading={pinging}
             onClick={pingAll}
@@ -597,7 +597,7 @@ export default function ServerList() {
           >
             测速
           </Button>
-          <Button type="primary" className="page-action" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
+          <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
         </Space>
       </div>
 
