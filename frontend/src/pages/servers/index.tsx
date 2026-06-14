@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message, Popconfirm, Tag, Card, Alert, Segmented, Tabs, Spin, Checkbox } from 'antd'
-import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, UploadOutlined, HddOutlined, CheckCircleOutlined } from '@ant-design/icons'
+import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, UploadOutlined, HddOutlined, CheckCircleOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { serverAPI, accountAPI, logAPI, subscriptionAPI, Server, Account, Subscription, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
@@ -101,6 +101,8 @@ export default function ServerList() {
   const [assignSubmitting, setAssignSubmitting] = useState(false)
   const [deleteSelected, setDeleteSelected] = useState<string[]>([])
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+  const [latencies, setLatencies] = useState<Map<string, number>>(new Map())
+  const [pinging, setPinging] = useState(false)
 
   const TIME_RANGES = [
     { label: '1小时', value: '1h' },
@@ -115,31 +117,6 @@ export default function ServerList() {
   useEffect(() => {
     plotlyPromise.then(() => {})
   }, [])
-
-  useEffect(() => {
-    loadServers()
-  }, [timeRange])
-
-  // 自动滚动到最新输出
-  useEffect(() => {
-    if (installOutputRef.current) {
-      installOutputRef.current.scrollTop = installOutputRef.current.scrollHeight
-    }
-  }, [installOutput])
-
-  // 安装结束后判断最终结果（installing: true→false 时触发）
-  const prevInstalling = useRef(false)
-  useEffect(() => {
-    if (prevInstalling.current && !installing) {
-      // 以 [ERROR] 或 连接失败 为真正的错误标志，忽略 Agent 等非核心步骤的"失败"字样
-      if (installOutput.includes('[ERROR]') || installOutput.includes('❌')) {
-        message.error('安装失败，请查看输出')
-      } else if (installOutput.includes('[OK]') || installOutput.includes('Reality配置已保存') || installOutput.includes('✓ 安装完成')) {
-        message.success('安装完成！')
-      }
-    }
-    prevInstalling.current = installing
-  }, [installing])
 
   const loadServers = async () => {
     setLoading(true)
@@ -162,6 +139,51 @@ export default function ServerList() {
       setLoading(false)
     }
   }
+
+  const pingAll = async () => {
+    if (pinging) return
+    setPinging(true)
+    try {
+      const data = await serverAPI.pingAll()
+      setLatencies(new Map(data.results.map((r: { server_id: string; latency_ms: number }) => [r.server_id, r.latency_ms])))
+    } catch {
+      // 静默失败，不打断主流程
+    } finally {
+      setPinging(false)
+    }
+  }
+
+  useEffect(() => {
+    loadServers()
+  }, [timeRange])
+
+  useEffect(() => {
+    pingAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timer = setInterval(pingAll, 60_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // 自动滚动到最新输出
+  useEffect(() => {
+    if (installOutputRef.current) {
+      installOutputRef.current.scrollTop = installOutputRef.current.scrollHeight
+    }
+  }, [installOutput])
+
+  // 安装结束后判断最终结果（installing: true→false 时触发）
+  const prevInstalling = useRef(false)
+  useEffect(() => {
+    if (prevInstalling.current && !installing) {
+      // 以 [ERROR] 或 连接失败 为真正的错误标志，忽略 Agent 等非核心步骤的"失败"字样
+      if (installOutput.includes('[ERROR]') || installOutput.includes('❌')) {
+        message.error('安装失败，请查看输出')
+      } else if (installOutput.includes('[OK]') || installOutput.includes('Reality配置已保存') || installOutput.includes('✓ 安装完成')) {
+        message.success('安装完成！')
+      }
+    }
+    prevInstalling.current = installing
+  }, [installing])
 
   const loadAssignData = async () => {
     if (!selectedServerForAccounts || assignLoading) return
@@ -500,6 +522,17 @@ export default function ServerList() {
     { title: '认证方式', dataIndex: 'ssh_key_type', render: (v: string) => v === 'password' ? '密码' : '密钥' },
     { title: '状态', dataIndex: 'status' },
     {
+      title: '延迟',
+      render: (_: any, record: Server) => {
+        if (!latencies.has(record.id)) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+        const ms = latencies.get(record.id)!
+        if (ms === -1) return <Tag color="red">超时</Tag>
+        if (ms <= 100) return <Tag color="green">{ms}ms</Tag>
+        if (ms <= 200) return <Tag color="orange">{ms}ms</Tag>
+        return <Tag color="red">{ms}ms</Tag>
+      },
+    },
+    {
       title: 'xray',
       render: (_: any, record: Server) => {
         const st = statuses.get(record.id)
@@ -553,7 +586,16 @@ export default function ServerList() {
           <h1>服务器管理</h1>
           <p>管理您的 V2ray 服务器和账号</p>
         </div>
-        <Button type="primary" className="page-action" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
+        <Space>
+          <Button
+            loading={pinging}
+            onClick={pingAll}
+            icon={<ThunderboltOutlined />}
+          >
+            测速
+          </Button>
+          <Button type="primary" className="page-action" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
+        </Space>
       </div>
 
       {/* Stats Grid */}
