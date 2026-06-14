@@ -173,6 +173,8 @@ export const serverAPI = {
   delete: (id: string) => api.delete(`/servers/${id}`),
   restartXray: (id: string) => api.post(`/servers/${id}/restart-xray`).then(r => r.data),
   syncXray: (id: string) => api.post(`/servers/${id}/sync-xray`).then(r => r.data),
+  pingAll: () =>
+    api.post<{ results: { server_id: string; latency_ms: number }[] }>('/servers/ping').then(r => r.data),
 }
 
 export interface AccountTrafficSeries {
