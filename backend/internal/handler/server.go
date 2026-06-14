@@ -192,8 +192,9 @@ func (h *ServerHandler) PingAll(c *gin.Context) {
 				results[idx] = PingResult{ServerID: id, LatencyMs: -1}
 				return
 			}
+			latencyMs := time.Since(start).Milliseconds()
 			conn.Close()
-			results[idx] = PingResult{ServerID: id, LatencyMs: time.Since(start).Milliseconds()}
+			results[idx] = PingResult{ServerID: id, LatencyMs: latencyMs}
 		}(i, s.ID, s.IP, s.SSHPort)
 	}
 	wg.Wait()

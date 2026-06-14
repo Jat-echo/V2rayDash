@@ -302,8 +302,8 @@ export default function ServerList() {
     try {
       await serverAPI.restartXray(serverId)
       message.success('xray 已重启')
-    } catch {
-      message.error(`xray 重启失败：${(e as any)?.message || '请稍后重试'}`)
+    } catch (err) {
+      message.error(`xray 重启失败：${(err as any)?.message || '请稍后重试'}`)
     } finally {
       setRestartingXray(null)
     }
