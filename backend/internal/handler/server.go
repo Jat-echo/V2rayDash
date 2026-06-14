@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -180,7 +181,11 @@ func (h *ServerHandler) PingAll(c *gin.Context) {
 		wg.Add(1)
 		go func(idx int, id, ip string, port int) {
 			defer wg.Done()
-			addr := fmt.Sprintf("%s:%d", ip, port)
+			if port == 0 {
+				results[idx] = PingResult{ServerID: id, LatencyMs: -1}
+				return
+			}
+			addr := net.JoinHostPort(ip, strconv.Itoa(port))
 			start := time.Now()
 			conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 			if err != nil {
