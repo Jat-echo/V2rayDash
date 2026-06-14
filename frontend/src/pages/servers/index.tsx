@@ -103,6 +103,7 @@ export default function ServerList() {
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
   const [latencies, setLatencies] = useState<Map<string, number>>(new Map())
   const [pinging, setPinging] = useState(false)
+  const isPinging = useRef(false)
 
   const TIME_RANGES = [
     { label: '1小时', value: '1h' },
@@ -141,14 +142,16 @@ export default function ServerList() {
   }
 
   const pingAll = async () => {
-    if (pinging) return
+    if (isPinging.current) return
+    isPinging.current = true
     setPinging(true)
     try {
       const data = await serverAPI.pingAll()
       setLatencies(new Map(data.results.map((r: { server_id: string; latency_ms: number }) => [r.server_id, r.latency_ms])))
     } catch {
-      // 静默失败，不打断主流程
+      // 静默失败
     } finally {
+      isPinging.current = false
       setPinging(false)
     }
   }
@@ -159,7 +162,6 @@ export default function ServerList() {
 
   useEffect(() => {
     pingAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     const timer = setInterval(pingAll, 60_000)
     return () => clearInterval(timer)
   }, [])
@@ -522,6 +524,7 @@ export default function ServerList() {
     { title: '认证方式', dataIndex: 'ssh_key_type', render: (v: string) => v === 'password' ? '密码' : '密钥' },
     { title: '状态', dataIndex: 'status' },
     {
+      key: 'latency',
       title: '延迟',
       render: (_: any, record: Server) => {
         if (!latencies.has(record.id)) return <span style={{ color: 'var(--text-muted)' }}>—</span>
