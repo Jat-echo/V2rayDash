@@ -4,7 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"v2ray-dash/backend/internal/model"
@@ -157,6 +160,40 @@ func (h *ServerHandler) SyncXray(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "同步成功"})
+}
+
+type PingResult struct {
+	ServerID  string `json:"server_id"`
+	LatencyMs int64  `json:"latency_ms"`
+}
+
+func (h *ServerHandler) PingAll(c *gin.Context) {
+	servers, err := h.repo.List()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	results := make([]PingResult, len(servers))
+	var wg sync.WaitGroup
+	for i, s := range servers {
+		wg.Add(1)
+		go func(idx int, id, ip string, port int) {
+			defer wg.Done()
+			addr := fmt.Sprintf("%s:%d", ip, port)
+			start := time.Now()
+			conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+			if err != nil {
+				results[idx] = PingResult{ServerID: id, LatencyMs: -1}
+				return
+			}
+			conn.Close()
+			results[idx] = PingResult{ServerID: id, LatencyMs: time.Since(start).Milliseconds()}
+		}(i, s.ID, s.IP, s.SSHPort)
+	}
+	wg.Wait()
+
+	c.JSON(http.StatusOK, gin.H{"results": results})
 }
 
 func (h *ServerHandler) Delete(c *gin.Context) {

@@ -76,6 +76,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		serverHandler := NewServerHandler(db.DB)
 		api.GET("/servers", serverHandler.List)
 		api.POST("/servers", serverHandler.Create)
+		api.POST("/servers/ping", serverHandler.PingAll)
 		api.GET("/servers/:id", serverHandler.Get)
 		api.PUT("/servers/:id", serverHandler.Update)
 		api.DELETE("/servers/:id", serverHandler.Delete)
