@@ -353,21 +353,21 @@ export default function SubscriptionList() {
       render: (_: any, record: SubscriptionWithAccounts) => {
         const used = record.traffic_used || 0
         const limit = record.traffic_limit || 0
-        const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0
+        const unlimited = limit === 0
+        const displayLimit = unlimited ? 200 * 1024 * 1024 * 1024 : limit
+        const pct = Math.min(100, (used / displayLimit) * 100)
         return (
           <div style={{ minWidth: 140 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
               <span>{formatBytes(used)}</span>
-              <span style={{ color: 'var(--text-secondary)' }}>{limit > 0 ? formatBytes(limit) : '无限'}</span>
+              <span style={{ color: 'var(--text-secondary)' }}>{unlimited ? '∞ 无限' : formatBytes(limit)}</span>
             </div>
-            {limit > 0 && (
-              <Progress
-                percent={Math.round(pct)}
-                size="small"
-                strokeColor={pct > 90 ? '#ff4d4f' : pct > 75 ? '#faad14' : '#52c41a'}
-                showInfo={false}
-              />
-            )}
+            <Progress
+              percent={Math.round(pct)}
+              size="small"
+              strokeColor={unlimited ? '#A8B5A0' : (pct > 90 ? '#C4836A' : pct > 75 ? '#C9A9A6' : '#A8B5A0')}
+              showInfo={false}
+            />
           </div>
         )
       }

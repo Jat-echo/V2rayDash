@@ -522,17 +522,29 @@ export default function ServerList() {
     { title: 'SSH端口', dataIndex: 'ssh_port' },
     { title: 'SSH用户', dataIndex: 'ssh_user' },
     { title: '认证方式', dataIndex: 'ssh_key_type', render: (v: string) => v === 'password' ? '密码' : '密钥' },
-    { title: '状态', dataIndex: 'status' },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      render: (v: string) => {
+        if (v === 'online') return (
+          <span className="srv-status online"><span className="srv-pulse" />在线</span>
+        )
+        if (v === 'offline') return (
+          <span className="srv-status offline"><span className="srv-dot" />离线</span>
+        )
+        return <span className="srv-status unknown"><span className="srv-dot" />未知</span>
+      },
+    },
     {
       key: 'latency',
       title: '延迟',
       render: (_: any, record: Server) => {
         const ms = latencies.get(record.id)
-        if (ms === undefined) return <span style={{ color: 'var(--text-muted)' }}>—</span>
-        if (ms === -1) return <Tag color="red">超时</Tag>
-        if (ms <= 100) return <Tag color="green">{ms}ms</Tag>
-        if (ms <= 200) return <Tag color="orange">{ms}ms</Tag>
-        return <Tag color="red">{ms}ms</Tag>
+        if (ms === undefined) return <span className="latency-none">—</span>
+        if (ms === -1) return <span className="latency-chip timeout">超时</span>
+        if (ms <= 100) return <span className="latency-chip good">{ms}ms</span>
+        if (ms <= 200) return <span className="latency-chip medium">{ms}ms</span>
+        return <span className="latency-chip slow">{ms}ms</span>
       },
     },
     {
@@ -541,12 +553,14 @@ export default function ServerList() {
         const st = statuses.get(record.id)
         const v2ray = st?.current?.v2ray_status
         const restarts = st?.v2ray_restarts ?? 0
-        if (!v2ray) return <Tag color="default">-</Tag>
+        if (!v2ray) return <span className="latency-none">—</span>
         return (
-          <Space size={4}>
-            <Tag color={v2ray === 'running' ? 'green' : 'red'}>{v2ray === 'running' ? '运行中' : '已停止'}</Tag>
-            {restarts > 0 && <Tag color="orange">重启 {restarts} 次</Tag>}
-          </Space>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            {v2ray === 'running'
+              ? <span className="srv-status online"><span className="srv-pulse" />运行中</span>
+              : <span className="srv-status error"><span className="srv-dot" />已停止</span>}
+            {restarts > 0 && <span className="latency-chip medium">重启 {restarts} 次</span>}
+          </span>
         )
       }
     },
@@ -1153,6 +1167,75 @@ export default function ServerList() {
           color: var(--text-muted);
           font-size: 13px;
         }
+
+        /* Server status indicators */
+        .srv-status {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 13px;
+        }
+        .srv-status.online  { color: #4d6e48; }
+        .srv-status.offline { color: var(--error); }
+        .srv-status.error   { color: var(--error); }
+        .srv-status.unknown { color: var(--text-muted); }
+
+        /* Static dot */
+        .srv-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: currentColor;
+          display: inline-block;
+          flex-shrink: 0;
+        }
+
+        /* Pulsing dot for active states */
+        .srv-pulse {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--morandi-sage);
+          display: inline-block;
+          flex-shrink: 0;
+          position: relative;
+        }
+        .srv-pulse::after {
+          content: '';
+          position: absolute;
+          inset: -3px;
+          border-radius: 50%;
+          background: var(--morandi-sage);
+          opacity: 0.45;
+          animation: srv-pulse-ring 2.4s ease-out infinite;
+        }
+        @keyframes srv-pulse-ring {
+          0%   { transform: scale(0.7); opacity: 0.5; }
+          70%  { transform: scale(1.8); opacity: 0; }
+          100% { transform: scale(1.8); opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .srv-pulse::after { animation: none; opacity: 0; }
+        }
+
+        /* Latency / status chips */
+        .latency-none {
+          color: var(--text-muted);
+          font-size: 13px;
+        }
+        .latency-chip {
+          display: inline-block;
+          padding: 2px 8px;
+          border-radius: 5px;
+          font-size: 12px;
+          font-weight: 500;
+          line-height: 1.6;
+          letter-spacing: 0.01em;
+        }
+        .latency-chip.good    { background: rgba(168,181,160,0.18); color: #4d6e48; }
+        .latency-chip.medium  { background: rgba(196,131,106,0.14); color: #8b5438; }
+        .latency-chip.slow,
+        .latency-chip.timeout { background: rgba(214,139,139,0.18); color: #9e4545; }
       `}</style>
     </div>
   )
