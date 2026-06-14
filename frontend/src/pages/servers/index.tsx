@@ -527,8 +527,8 @@ export default function ServerList() {
       key: 'latency',
       title: '延迟',
       render: (_: any, record: Server) => {
-        if (!latencies.has(record.id)) return <span style={{ color: 'var(--text-muted)' }}>—</span>
-        const ms = latencies.get(record.id)!
+        const ms = latencies.get(record.id)
+        if (ms === undefined) return <span style={{ color: 'var(--text-muted)' }}>—</span>
         if (ms === -1) return <Tag color="red">超时</Tag>
         if (ms <= 100) return <Tag color="green">{ms}ms</Tag>
         if (ms <= 200) return <Tag color="orange">{ms}ms</Tag>
