@@ -112,7 +112,7 @@ func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange st
 	query := `
 		SELECT
 		  server_id,
-		  to_timestamp(floor(extract(epoch from reported_at) / $3) * $3) AS bucket_time,
+		  to_timestamp(floor(extract(epoch from reported_at AT TIME ZONE current_setting('TIMEZONE')) / $3) * $3) AS bucket_time,
 		  MAX(cpu_percent)    AS cpu_percent,
 		  MAX(memory_percent) AS memory_percent,
 		  MAX(disk_percent)   AS disk_percent,
@@ -123,7 +123,7 @@ func (r *LogRepository) GetNodeStatusesByTimeRange(serverID string, timeRange st
 		WHERE reported_at > NOW() - $2::interval
 		  AND ($1 = '' OR server_id = $1::uuid)
 		GROUP BY server_id,
-		         to_timestamp(floor(extract(epoch from reported_at) / $3) * $3)
+		         to_timestamp(floor(extract(epoch from reported_at AT TIME ZONE current_setting('TIMEZONE')) / $3) * $3)
 		ORDER BY server_id, bucket_time ASC
 	`
 

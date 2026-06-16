@@ -402,7 +402,7 @@ func (r *SubscriptionRepository) GetAccountTrafficLogs(subscriptionID, timeRange
 		  a.email,
 		  srv.name,
 		  MAX(atl.traffic_bytes) AS traffic_bytes,
-		  to_timestamp(floor(extract(epoch from atl.recorded_at) / $3) * $3) AS bucket_time
+		  (to_timestamp(floor(extract(epoch from atl.recorded_at AT TIME ZONE current_setting('TIMEZONE')) / $3) * $3) AT TIME ZONE 'UTC') AT TIME ZONE current_setting('TIMEZONE') AS bucket_time
 		FROM subscription_accounts sa
 		JOIN accounts a ON sa.account_id = a.id
 		JOIN servers srv ON a.server_id = srv.id
@@ -410,7 +410,7 @@ func (r *SubscriptionRepository) GetAccountTrafficLogs(subscriptionID, timeRange
 		WHERE sa.subscription_id = $1
 		  AND atl.recorded_at > NOW() - $2::interval
 		GROUP BY a.id, a.email, srv.name,
-		         to_timestamp(floor(extract(epoch from atl.recorded_at) / $3) * $3)
+		         (to_timestamp(floor(extract(epoch from atl.recorded_at AT TIME ZONE current_setting('TIMEZONE')) / $3) * $3) AT TIME ZONE 'UTC') AT TIME ZONE current_setting('TIMEZONE')
 		ORDER BY a.id, bucket_time ASC
 	`, subscriptionID, interval, bucket)
 	if err != nil {
@@ -454,10 +454,10 @@ func (r *SubscriptionRepository) GetTrafficLogs(subscriptionID, timeRange string
 	rows, err := r.db.Query(`
 		SELECT
 		  MAX(traffic_bytes) AS traffic_bytes,
-		  to_timestamp(floor(extract(epoch from recorded_at) / $3) * $3) AS bucket_time
+		  to_timestamp(floor(extract(epoch from recorded_at AT TIME ZONE current_setting('TIMEZONE')) / $3) * $3) AS bucket_time
 		FROM subscription_traffic_logs
 		WHERE subscription_id = $1 AND recorded_at > NOW() - $2::interval
-		GROUP BY to_timestamp(floor(extract(epoch from recorded_at) / $3) * $3)
+		GROUP BY to_timestamp(floor(extract(epoch from recorded_at AT TIME ZONE current_setting('TIMEZONE')) / $3) * $3)
 		ORDER BY bucket_time ASC`, subscriptionID, interval, bucket)
 	if err != nil {
 		return nil, err
