@@ -169,6 +169,29 @@ function App() {
         </Layout.Sider>
 
         <Layout className="app-main" style={{ marginLeft: collapsed ? 72 : 240 }}>
+          {/* 移动端顶栏：Logo + 账户菜单（仅小屏显示） */}
+          <header className="mobile-topbar">
+            <div className="mobile-logo">
+              <img src="/favicon.svg" alt="logo" />
+              <span>V2ray<b>Dash</b></span>
+            </div>
+            <Dropdown
+              trigger={['click']}
+              placement="bottomRight"
+              menu={{
+                items: [
+                  { key: 'user', label: username || '未登录', disabled: true },
+                  { type: 'divider' },
+                  { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout },
+                ],
+              }}
+            >
+              <div className="mobile-account" role="button" aria-label="账户菜单">
+                <Avatar size={30} icon={<UserOutlined />} style={{ background: '#c9a9a6' }} />
+              </div>
+            </Dropdown>
+          </header>
+
           <Content className="app-content" style={{ padding: '28px 32px' }}>
             <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spin size="large" /></div>}>
               <Routes>
@@ -181,6 +204,20 @@ function App() {
             </Suspense>
           </Content>
         </Layout>
+
+        {/* 移动端底部标签栏：主导航（仅小屏显示） */}
+        <nav className="mobile-bottomnav">
+          {navItems.map(item => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => isActive ? 'active' : ''}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+        </nav>
       </Layout>
     </BrowserRouter>
   )

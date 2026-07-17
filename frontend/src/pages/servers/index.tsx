@@ -1140,6 +1140,8 @@ export default function ServerList() {
         }
         @media (max-width: 700px) {
           .metrics-row { grid-template-columns: 1fr; }
+          .metric-cell { border-right: none; border-bottom: 1px solid var(--border-color); }
+          .metric-cell:last-child { border-bottom: none; }
         }
         .metric-cell {
           padding: 12px;

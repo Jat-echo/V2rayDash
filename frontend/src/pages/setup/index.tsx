@@ -37,10 +37,11 @@ export default function SetupPage({ onComplete }: Props) {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 16,
       background: 'linear-gradient(135deg, #f5f0e8 0%, #ede8e0 100%)',
     }}>
       <div style={{
-        background: '#fff', borderRadius: 16, padding: '48px 40px', width: 420,
+        background: '#fff', borderRadius: 16, padding: '48px 40px', width: '100%', maxWidth: 420,
         boxShadow: '0 8px 32px rgba(60,55,48,0.12)',
       }}>
         <div style={{ textAlign: 'center', marginBottom: 36 }}>

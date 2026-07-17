@@ -290,6 +290,94 @@ body {
 .animate-delay-2 { animation-delay: 0.2s; }
 .animate-delay-3 { animation-delay: 0.3s; }
 
+/* Mobile navigation — hidden on desktop, revealed under 768px */
+.mobile-topbar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 16px;
+  padding-top: env(safe-area-inset-top);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 60;
+}
+
+.mobile-topbar .mobile-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-topbar .mobile-logo img {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.mobile-topbar .mobile-logo span {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.5px;
+}
+
+.mobile-topbar .mobile-logo b {
+  font-weight: 600;
+  color: var(--morandi-dusty-rose);
+}
+
+.mobile-account {
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.mobile-bottomnav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg-sidebar);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 90;
+}
+
+.mobile-bottomnav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 54px;
+  padding: 8px 0 7px;
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+  font-size: 11px;
+  transition: color 0.2s ease;
+}
+
+.mobile-bottomnav a svg {
+  width: 22px;
+  height: 22px;
+  opacity: 0.9;
+}
+
+.mobile-bottomnav a.active {
+  color: var(--morandi-dusty-rose);
+}
+
+.mobile-bottomnav a:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
 @media (max-width: 768px) {
   .app-sidebar {
     display: none;
@@ -297,8 +385,53 @@ body {
   .app-main {
     margin-left: 0 !important;
   }
+  /* content padding leaves room for the fixed bottom tab bar + safe area */
   .app-content {
-    padding: 16px;
+    padding: 16px 16px calc(72px + env(safe-area-inset-bottom)) !important;
+  }
+  .mobile-topbar {
+    display: flex;
+  }
+  .mobile-bottomnav {
+    display: flex;
+  }
+
+  /* page headers stack the title and its action button */
+  .page-header-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .page-header-row .page-action {
+    margin-top: 0;
+  }
+  .page-header h1,
+  .page-header-row h1 {
+    font-size: 22px;
+  }
+
+  /* keep wide tables scrollable inside their card instead of breaking the page */
+  .ant-table-wrapper {
+    overflow-x: auto;
+  }
+
+  /* modals fit within the viewport */
+  .ant-modal {
+    max-width: calc(100vw - 24px);
+    margin: 12px auto;
+  }
+
+  /* denser stat cards on narrow screens */
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-bottomnav a,
+  .mobile-account {
+    transition: none;
   }
 }
 
