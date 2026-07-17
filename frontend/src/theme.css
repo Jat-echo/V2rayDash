@@ -233,12 +233,13 @@ body {
   background: rgba(201, 169, 166, 0.05);
 }
 
-/* Remove horizontal padding from expanded rows so chart fills full width */
+/* Remove horizontal padding from expanded rows so chart fills full width.
+   Note: with a horizontally scrollable table (scroll.x), AntD sets an inline
+   width on .ant-table-expanded-row-fixed to pin expanded content to the visible
+   viewport — do NOT override it to 100%, or the content stretches to the full
+   scroll width and only its left edge stays visible on narrow screens. */
 .ant-table-expanded-row > .ant-table-cell {
   padding-inline: 0 !important;
-}
-.ant-table-expanded-row-fixed {
-  width: 100% !important;
 }
 
 /* Modal Styling */

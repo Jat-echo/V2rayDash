@@ -445,6 +445,7 @@ export default function SubscriptionList() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
+          scroll={{ x: 'max-content' }}
           onChange={(_, __, sorter) => setSortedInfo(Array.isArray(sorter) ? (sorter[0] ?? {}) : sorter)}
           expandable={{ expandedRowRender: (record) => <TrafficDetail subId={record.id} accounts={record.accounts} /> }}
         />

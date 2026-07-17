@@ -641,6 +641,7 @@ export default function ServerList() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
+          scroll={{ x: 'max-content' }}
           expandable={{
             expandedRowRender: (record: Server) => {
               const status = statuses.get(record.id)
