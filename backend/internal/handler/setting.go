@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -178,19 +177,14 @@ func (h *SettingHandler) GetSystemStatus(c *gin.Context) {
 		memPercent = float64(memTotal-memAvail) / float64(memTotal) * 100
 	}
 
-	// Disk: syscall.Statfs on /
+	// Disk: use the native filesystem API for the current platform.
 	var diskPercent float64
 	var diskUsedGB, diskTotalGB float64
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err == nil {
-		total := stat.Blocks * uint64(stat.Bsize)
-		free := stat.Bfree * uint64(stat.Bsize)
+	if total, free := diskUsage(); total > 0 {
 		used := total - free
 		diskTotalGB = float64(total) / (1024 * 1024 * 1024)
 		diskUsedGB = float64(used) / (1024 * 1024 * 1024)
-		if total > 0 {
-			diskPercent = float64(used) / float64(total) * 100
-		}
+		diskPercent = float64(used) / float64(total) * 100
 	}
 
 	c.JSON(http.StatusOK, gin.H{

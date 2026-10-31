@@ -20,7 +20,7 @@ func NewSubscriptionRepository(db *sql.DB) *SubscriptionRepository {
 }
 
 func (r *SubscriptionRepository) Create(req *model.CreateSubscriptionRequest) (*model.Subscription, error) {
-	subUUID := generateUUID()
+	subUUID := uuid.NewString()
 
 	// 获取第一个账号关联的 server_id
 	var serverID string
@@ -122,6 +122,27 @@ func (r *SubscriptionRepository) ListByServerID(serverID string) ([]*model.Subsc
 }
 
 func (r *SubscriptionRepository) Update(id string, req *model.UpdateSubscriptionRequest) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var enabled bool
+	var limit int64
+	if err = tx.QueryRow(`SELECT enable,traffic_limit FROM subscriptions WHERE id=$1 FOR UPDATE`, id).Scan(&enabled, &limit); err != nil {
+		return err
+	}
+	changed := (req.Enable != nil && *req.Enable != enabled) || (req.TrafficLimit != nil && *req.TrafficLimit != limit)
+	var nodes []string
+	if changed {
+		nodes, err = subscriptionNodeIDs(tx, id)
+		if err != nil {
+			return err
+		}
+		if err = lockManagedNodes(tx, nodes); err != nil {
+			return err
+		}
+	}
 	setClauses := []string{"updated_at = CURRENT_TIMESTAMP"}
 	args := []interface{}{}
 	idx := 1
@@ -147,13 +168,41 @@ func (r *SubscriptionRepository) Update(id string, req *model.UpdateSubscription
 	}
 	args = append(args, id)
 	query := fmt.Sprintf("UPDATE subscriptions SET %s WHERE id = $%d", strings.Join(setClauses, ", "), idx)
-	_, err := r.db.Exec(query, args...)
-	return err
+	if _, err = tx.Exec(query, args...); err != nil {
+		return err
+	}
+	if changed {
+		if err = markNodesPending(tx, nodes); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *SubscriptionRepository) Delete(id string) error {
-	_, err := r.db.Exec(`DELETE FROM subscriptions WHERE id = $1`, id)
-	return err
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var locked string
+	if err = tx.QueryRow(`SELECT id FROM subscriptions WHERE id=$1 FOR UPDATE`, id).Scan(&locked); err != nil {
+		return err
+	}
+	nodes, err := subscriptionNodeIDs(tx, id)
+	if err != nil {
+		return err
+	}
+	if err = lockManagedNodes(tx, nodes); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM subscriptions WHERE id=$1`, id); err != nil {
+		return err
+	}
+	if err = markNodesPending(tx, nodes); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *SubscriptionRepository) GetAccountIDs(subscriptionID string) ([]string, error) {
@@ -184,12 +233,12 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 		SELECT s.id, COALESCE(s.server_id::text, ''), s.name, s.remark, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
 		       a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
 		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
-		       srv.name, srv.ip
+		       srv.name, srv.ip, COALESCE(a.combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=a.combination_id),'')
 		FROM subscriptions s
 		LEFT JOIN subscription_accounts sa ON s.id = sa.subscription_id
 		LEFT JOIN accounts a ON sa.account_id = a.id
 		LEFT JOIN servers srv ON a.server_id = srv.id
-		ORDER BY s.created_at DESC
+		ORDER BY s.created_at DESC, sa.sort_order ASC, a.created_at DESC, a.id
 	`)
 	if err != nil {
 		return nil, err
@@ -210,12 +259,13 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 		var accTrafficLimit, accTrafficUsed sql.NullInt64
 		var accCreated, accUpdated sql.NullTime
 		var serverName, serverIP sql.NullString
+		var combinationID, combinationName string
 
 		err := rows.Scan(
 			&subID, &subServerID, &subName, &subRemark, &subUUID, &subEnable, &subTrafficLimit, &subTrafficUsed, &subCreated, &subUpdated,
 			&accID, &accServerID, &accUUID, &accEmail, &accProtocols, &accEnabled,
 			&accTrafficLimit, &accTrafficUsed, &accCreated, &accUpdated,
-			&serverName, &serverIP,
+			&serverName, &serverIP, &combinationID, &combinationName,
 		)
 		if err != nil {
 			return nil, err
@@ -242,7 +292,7 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 		if accID.Valid {
 			acc := &model.AccountWithServerInfo{
 				Account: model.Account{
-					ID:           accID.String,
+					CombinationID: combinationID, CombinationName: combinationName, ID: accID.String,
 					ServerID:     accServerID.String,
 					UUID:         accUUID.String,
 					Email:        accEmail.String,
@@ -270,82 +320,17 @@ func (r *SubscriptionRepository) GetSubscriptionsWithAccounts() ([]*model.Subscr
 }
 
 func (r *SubscriptionRepository) GetByIDWithAccounts(id string) (*model.SubscriptionWithAccounts, error) {
-	row := r.db.QueryRow(`
-		SELECT s.id, COALESCE(s.server_id::text, ''), s.name, s.remark, s.uuid, s.enable, s.traffic_limit, s.traffic_used, s.created_at, s.updated_at,
-		       a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
-		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
-		       srv.name, srv.ip
-		FROM subscriptions s
-		LEFT JOIN subscription_accounts sa ON s.id = sa.subscription_id
-		LEFT JOIN accounts a ON sa.account_id = a.id
-		LEFT JOIN servers srv ON a.server_id = srv.id
-		WHERE s.id = $1
-	`, id)
-
-	var subID, subServerID, subName, subRemark, subUUID string
-	var subEnable bool
-	var subTrafficLimit, subTrafficUsed int64
-	var subCreated, subUpdated time.Time
-	var accID, accServerID, accUUID, accEmail sql.NullString
-	var accProtocols pq.StringArray
-	var accEnabled sql.NullBool
-	var accTrafficLimit, accTrafficUsed sql.NullInt64
-	var accCreated, accUpdated sql.NullTime
-	var serverName, serverIP sql.NullString
-
-	err := row.Scan(
-		&subID, &subServerID, &subName, &subRemark, &subUUID, &subEnable, &subTrafficLimit, &subTrafficUsed, &subCreated, &subUpdated,
-		&accID, &accServerID, &accUUID, &accEmail, &accProtocols, &accEnabled,
-		&accTrafficLimit, &accTrafficUsed, &accCreated, &accUpdated,
-		&serverName, &serverIP,
-	)
+	sub, err := r.GetByID(id)
 	if err != nil {
 		return nil, err
 	}
-
-	result := &model.SubscriptionWithAccounts{
-		Subscription: model.Subscription{
-			ID:           subID,
-			ServerID:     subServerID,
-			Name:         subName,
-			Remark:       subRemark,
-			UUID:         subUUID,
-			Enable:       subEnable,
-			TrafficLimit: subTrafficLimit,
-			TrafficUsed:  subTrafficUsed,
-			CreatedAt:    subCreated,
-			UpdatedAt:    subUpdated,
-		},
-		Accounts: []*model.AccountWithServerInfo{},
+	accounts, err := NewSubscriptionAccountRepository(r.db).GetBySubscriptionOrdered(id)
+	if err != nil {
+		return nil, err
 	}
-
-	if accID.Valid {
-		result.Accounts = append(result.Accounts, &model.AccountWithServerInfo{
-			Account: model.Account{
-				ID:           accID.String,
-				ServerID:     accServerID.String,
-				UUID:         accUUID.String,
-				Email:        accEmail.String,
-				Protocols:    accProtocols,
-				Enabled:      accEnabled.Bool,
-				TrafficLimit: accTrafficLimit.Int64,
-				TrafficUsed:  accTrafficUsed.Int64,
-				CreatedAt:    accCreated.Time,
-				UpdatedAt:    accUpdated.Time,
-			},
-			ServerName: serverName.String,
-			ServerIP:   serverIP.String,
-		})
-	}
-
-	return result, nil
+	return &model.SubscriptionWithAccounts{Subscription: *sub, Accounts: accounts}, nil
 }
 
-func generateUUID() string {
-	return uuid.New().String()
-}
-
-// GetByAccountID returns all subscription IDs that contain the given account
 func (r *SubscriptionRepository) GetByAccountID(accountID string) ([]string, error) {
 	rows, err := r.db.Query(
 		`SELECT subscription_id FROM subscription_accounts WHERE account_id = $1`,

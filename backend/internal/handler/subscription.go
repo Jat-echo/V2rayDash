@@ -11,17 +11,16 @@ import (
 	"v2ray-dash/backend/internal/model"
 	"v2ray-dash/backend/internal/repository"
 	"v2ray-dash/backend/internal/service"
-	"v2ray-dash/backend/internal/ssh"
 )
 
 type SubscriptionHandler struct {
-	repo          *repository.SubscriptionRepository
-	subAccRepo    *repository.SubscriptionAccountRepository
-	logRepo       *repository.LogRepository
-	accountRepo   *repository.AccountRepository
-	serverRepo    *repository.ServerRepository
-	settingRepo   *repository.SettingRepository
-	accountSvc    *service.AccountService
+	repo        *repository.SubscriptionRepository
+	subAccRepo  *repository.SubscriptionAccountRepository
+	logRepo     *repository.LogRepository
+	accountRepo *repository.AccountRepository
+	serverRepo  *repository.ServerRepository
+	settingRepo *repository.SettingRepository
+	accountSvc  *service.AccountService
 }
 
 func NewSubscriptionHandler(db *sql.DB) *SubscriptionHandler {
@@ -90,56 +89,22 @@ func (h *SubscriptionHandler) Get(c *gin.Context) {
 func (h *SubscriptionHandler) Create(c *gin.Context) {
 	var req model.CreateSubscriptionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	sub, err := h.repo.Create(&req)
+	id, servers, err := h.repo.CreateWithTargets(&req)
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
-			c.JSON(http.StatusConflict, gin.H{"error": "已存在同名订阅"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	accountIDs := make([]string, 0)
-	for _, mapping := range req.AccountMappings {
-		var accountID string
-		if mapping.AutoCreate {
-			newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
-				ServerID:  mapping.ServerID,
-				Email:    fmt.Sprintf("auto-%s", sub.ID[:8]),
-				Protocols: []string{"vless_tcp"},
-			})
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
-				return
-			}
-			accountID = newAccount.ID
-		} else {
-			accountID = mapping.AccountID
-		}
-
-		if err := h.subAccRepo.AddAccount(sub.ID, accountID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("add account to subscription failed: %v", err)})
-			return
-		}
-		accountIDs = append(accountIDs, accountID)
+	h.syncTargetServers(servers)
+	h.logRepo.Create(&model.OperationLog{Operator: "admin", Action: "create_subscription", TargetType: "subscription", TargetID: id, Detail: map[string]any{"name": req.Name, "node_count": len(req.AccountMappings)}, IP: c.ClientIP()})
+	result, err := h.repo.GetByIDWithAccounts(id)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "读取新订阅失败"})
+		return
 	}
-
-	h.logRepo.Create(&model.OperationLog{
-		Operator:   "admin",
-		Action:     "create_subscription",
-		TargetType: "subscription",
-		TargetID:   sub.ID,
-		Detail:     map[string]any{"name": sub.Name, "account_count": len(accountIDs)},
-		IP:         c.ClientIP(),
-	})
-
-	result, _ := h.repo.GetByIDWithAccounts(sub.ID)
-	c.JSON(http.StatusCreated, result)
+	c.JSON(201, result)
 }
 
 func (h *SubscriptionHandler) Update(c *gin.Context) {
@@ -149,39 +114,18 @@ func (h *SubscriptionHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if req.AccountMappings != nil {
+		servers, err := h.repo.ReplaceTargets(id, *req.AccountMappings)
+		if err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+		h.syncTargetServers(servers)
+	}
 
 	if err := h.repo.Update(id, &req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-
-	if req.AccountMappings != nil {
-		accountIDs := make([]string, 0)
-		sortOrders := make(map[string]int)
-
-		for i, mapping := range *req.AccountMappings {
-			var accountID string
-			if mapping.AutoCreate {
-				newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
-					ServerID:  mapping.ServerID,
-					Email:    fmt.Sprintf("auto-%s", id[:8]),
-					Protocols: []string{"vless_tcp"},
-				})
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
-					return
-				}
-				accountID = newAccount.ID
-			} else {
-				accountID = mapping.AccountID
-			}
-			accountIDs = append(accountIDs, accountID)
-			sortOrders[accountID] = i
-		}
-
-		if len(accountIDs) > 0 {
-			h.subAccRepo.ReplaceAccounts(id, accountIDs, sortOrders)
-		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "updated"})
@@ -224,74 +168,25 @@ func (h *SubscriptionHandler) GetLink(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"link":         link,
-		"encoded":      encoded,
+		"link":          link,
+		"encoded":       encoded,
 		"account_links": accountLinks,
 	})
 }
 
 func (h *SubscriptionHandler) AddAccount(c *gin.Context) {
-	id := c.Param("id")
-	var req struct {
-		ServerID  string `json:"server_id"`
-		AccountID string `json:"account_id"`
-		AutoCreate bool  `json:"auto_create"`
-	}
+	var req model.AccountMapping
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": "节点参数无效"})
 		return
 	}
-	if req.ServerID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "server_id is required"})
+	added, servers, err := h.repo.AddTarget(c.Param("id"), req)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-	if !req.AutoCreate && req.AccountID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "account_id is required when auto_create is false"})
-		return
-	}
-
-	var accountID string
-	if req.AutoCreate {
-		email := fmt.Sprintf("auto-%s", id[:8])
-		if sub, err := h.repo.GetByID(id); err == nil {
-			email = sub.Name
-		}
-		// Reuse existing account with the same name on this server if present
-		if existing, err := h.accountRepo.GetByServerIDAndEmail(req.ServerID, email); err == nil {
-			accountID = existing.ID
-		} else {
-			newAccount, err := h.accountRepo.Create(&model.CreateAccountRequest{
-				ServerID:  req.ServerID,
-				Email:     email,
-				Protocols: []string{"vless_reality_vision"},
-			})
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("auto create account failed: %v", err)})
-				return
-			}
-			accountID = newAccount.ID
-		}
-	} else {
-		accountID = req.AccountID
-	}
-
-	if err := h.subAccRepo.AddAccount(id, accountID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// 同步到远程 xray 服务器
-	if server, err := h.serverRepo.GetByIDForInstall(req.ServerID); err == nil {
-		var auth ssh.SSHAuth
-		if server.SSHKeyType == "password" {
-			auth = &ssh.PasswordAuth{Password: server.SSHPassword}
-		} else {
-			auth = &ssh.KeyAuth{PrivateKey: server.SSHKey}
-		}
-		go h.accountSvc.SyncAllToRemote(req.ServerID, auth)
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "account added"})
+	h.syncTargetServers(servers)
+	c.JSON(200, gin.H{"message": "节点已添加", "added": added})
 }
 
 func (h *SubscriptionHandler) RemoveAccount(c *gin.Context) {
@@ -392,6 +287,15 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 			return
 		}
 	}
+	accounts, err = h.accountSvc.ReadyAccounts(accounts)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to load published accounts")
+		return
+	}
+	if len(accounts) == 0 {
+		c.String(http.StatusServiceUnavailable, "No published enabled accounts; publish the node configuration first")
+		return
+	}
 
 	serverIDs := make([]string, 0)
 	serverMap := make(map[string]*model.Server)
@@ -409,10 +313,13 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 		}
 		serverMap[serverID] = server
 		realityConfigs[serverID] = &service.RealityConfig{
-			Enabled:    server.RealityEnabled,
-			ServerName: server.RealityServerName,
-			PublicKey:  server.RealityPublicKey,
-			Port:       server.RealityPort,
+			Enabled:           server.RealityEnabled,
+			ServerName:        server.RealityServerName,
+			PublicKey:         server.RealityPublicKey,
+			ShortID:           service.RealityShortID(server),
+			ShortIDConfigured: server.Node != nil,
+			SupportMLKEM:      server.Node != nil && server.Node.Layout != "legacy",
+			Port:              server.RealityPort,
 		}
 	}
 
@@ -442,7 +349,7 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 		c.Header("Content-Type", "text/plain; charset=utf-8")
 	}
 
-	c.Header("Cache-Control", "public, max-age=3600")
+	c.Header("Cache-Control", "private, no-store")
 	c.Header("Subscription-Userinfo", fmt.Sprintf("upload=0; download=%d; total=%d; left=%d",
 		sub.TrafficUsed, sub.TrafficLimit, sub.TrafficLimit-sub.TrafficUsed))
 

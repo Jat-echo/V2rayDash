@@ -15,7 +15,10 @@ import (
 	"v2ray-dash/agent/internal/model"
 )
 
-type Collector struct{}
+type Collector struct {
+	Service    string
+	Cumulative bool
+}
 
 func New() *Collector {
 	return &Collector{}
@@ -41,9 +44,17 @@ func (c *Collector) Collect() (*model.NodeStatus, error) {
 	bandwidthIn, bandwidthOut, _ := c.getBandwidth()
 
 	v2rayStatus := c.checkV2ray()
+	epoch := ""
+	if c.Cumulative {
+		epoch = c.trafficEpoch()
+	}
 	userTraffic := c.getXrayUserTraffic()
+	if c.Cumulative && (epoch == "" || epoch != c.trafficEpoch()) {
+		userTraffic = nil
+	}
 
 	return &model.NodeStatus{
+		TrafficEpoch:     epoch,
 		CPUPercent:       cpu,
 		MemoryPercent:    mem,
 		DiskPercent:      disk,
@@ -87,7 +98,12 @@ func readProcStat() (cpuStat, error) {
 			iowait:  parse(fields[5]),
 			irq:     parse(fields[6]),
 			softirq: parse(fields[7]),
-			steal:   func() uint64 { if len(fields) > 8 { return parse(fields[8]) }; return 0 }(),
+			steal: func() uint64 {
+				if len(fields) > 8 {
+					return parse(fields[8])
+				}
+				return 0
+			}(),
 		}, nil
 	}
 	return cpuStat{}, fmt.Errorf("cpu line not found in /proc/stat")
@@ -255,10 +271,7 @@ func (c *Collector) getXrayUserTraffic() []model.UserTrafficStat {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, xrayBin(), "api", "statsquery",
-		"--server=127.0.0.1:10085",
-		"--pattern=user",
-		"--reset")
+	cmd := exec.CommandContext(ctx, xrayBin(), c.statsArgs()...)
 	output, err := cmd.Output()
 	if err != nil {
 		log.Printf("xray statsquery error: %v", err)
@@ -303,4 +316,45 @@ func (c *Collector) getXrayUserTraffic() []model.UserTrafficStat {
 		stats = append(stats, *s)
 	}
 	return stats
+}
+
+func (c *Collector) statsArgs() []string {
+	args := []string{"api", "statsquery", "--server=127.0.0.1:10085", "--pattern=user"}
+	if !c.Cumulative {
+		args = append(args, "--reset")
+	}
+	return args
+}
+
+func (c *Collector) trafficEpoch() string {
+	if runtime.GOOS != "linux" {
+		return ""
+	}
+	service := c.Service
+	if service == "" {
+		service = "xray"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	value, err := exec.CommandContext(ctx, "systemctl", "show", "-p", "MainPID", "--value", service).Output()
+	if err != nil {
+		return ""
+	}
+	pid := strings.TrimSpace(string(value))
+	if n, err := strconv.Atoi(pid); err != nil || n <= 0 {
+		return ""
+	}
+	proc, err := os.ReadFile("/proc/" + pid + "/stat")
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(proc)[strings.LastIndex(string(proc), ")")+1:])
+	if len(fields) < 20 {
+		return ""
+	}
+	boot, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(boot)) + ":" + pid + ":" + fields[19]
 }

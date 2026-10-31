@@ -82,6 +82,16 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.DELETE("/servers/:id", serverHandler.Delete)
 		api.POST("/servers/:id/restart-xray", serverHandler.RestartXray)
 		api.POST("/servers/:id/sync-xray", serverHandler.SyncXray)
+		nodeHandler := NewManagedNodeHandler(db.DB)
+		api.POST("/servers/:id/adopt", nodeHandler.Adopt)
+		api.POST("/servers/:id/publish", nodeHandler.Publish)
+		api.POST("/servers/:id/probe", nodeHandler.Probe)
+		api.POST("/servers/:id/monitor", nodeHandler.Monitor)
+		api.GET("/relay-combinations", nodeHandler.Combinations)
+		api.GET("/relay-combinations/:id/connection", nodeHandler.CombinationConnection)
+		api.POST("/relay-combinations", nodeHandler.SaveCombination)
+		api.PUT("/relay-combinations/:id", nodeHandler.SaveCombination)
+		api.DELETE("/relay-combinations/:id", nodeHandler.DeleteCombination)
 
 		// 账号管理
 		accountHandler := NewAccountHandler(db.DB)
@@ -91,6 +101,7 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		api.GET("/subscriptions", subHandler.List)
 		api.GET("/subscriptions/full", subHandler.ListWithAccounts)
 		api.POST("/subscriptions", subHandler.Create)
+		api.POST("/subscriptions/batch", subHandler.Batch)
 		api.GET("/subscriptions/:id", subHandler.Get)
 		api.PUT("/subscriptions/:id", subHandler.Update)
 		api.DELETE("/subscriptions/:id", subHandler.Delete)
@@ -125,17 +136,17 @@ func SetupRoutes(r *gin.Engine, db *database.DB, cfg *config.Config) {
 		// /agents/latest/:os_arch/agent (单段，如 linux_x86_64)
 		// 因为 Gin 不允许 catch-all 后还有路径，使用 *path 然后在 handler 中检查后缀
 		r.GET("/agents/latest/*path", func(c *gin.Context) {
-			path := c.Param("path")
-			// 移除前缀的 /
-			path = strings.TrimPrefix(path, "/")
-			if !strings.HasSuffix(path, "agent") && !strings.HasSuffix(path, "agent/") {
+			path := strings.Trim(c.Param("path"), "/")
+			switch path {
+			case "linux/amd64/agent", "linux/x86_64/agent", "linux_amd64/agent", "linux_x86_64/agent":
+			default:
 				c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 				return
 			}
-			agentBinaryPath := "/tmp/v2ray-agent"
-			if _, err := os.Stat(agentBinaryPath); err == nil {
+			artifact := agentBinaryPath()
+			if _, err := os.Stat(artifact); err == nil {
 				c.Header("Content-Type", "application/octet-stream")
-				c.File(agentBinaryPath)
+				c.File(artifact)
 				return
 			}
 			c.JSON(http.StatusNotFound, gin.H{"error": "agent binary not found"})

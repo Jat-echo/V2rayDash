@@ -5,22 +5,26 @@ import (
 )
 
 type Account struct {
-	ID            string    `json:"id"`
-	ServerID      string    `json:"server_id"`
-	UUID          string    `json:"uuid"`
-	Email         string    `json:"email"`
-	Protocols     []string  `json:"protocols"`
-	Enabled       bool      `json:"enabled"`
-	TrafficLimit  int64     `json:"traffic_limit"`
-	TrafficUsed   int64     `json:"traffic_used"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ExportFlag      string    `json:"-"` // Derived from the applied landing node when preparing subscriptions.
+	CombinationID   string    `json:"combination_id,omitempty"`
+	CombinationName string    `json:"combination_name,omitempty"`
+	Transport       bool      `json:"transport"`
+	ID              string    `json:"id"`
+	ServerID        string    `json:"server_id"`
+	UUID            string    `json:"uuid"`
+	Email           string    `json:"email"`
+	Protocols       []string  `json:"protocols"`
+	Enabled         bool      `json:"enabled"`
+	TrafficLimit    int64     `json:"traffic_limit"`
+	TrafficUsed     int64     `json:"traffic_used"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type CreateAccountRequest struct {
 	ServerID  string   `json:"server_id" binding:"required"`
-	UUID     string   `json:"uuid"`
-	Email    string   `json:"email" binding:"required"`
+	UUID      string   `json:"uuid"`
+	Email     string   `json:"email" binding:"required"`
 	Protocols []string `json:"protocols" binding:"required"`
 }
 

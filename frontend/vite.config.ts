@@ -7,7 +7,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: process.env.V2RAY_API_TARGET || 'http://localhost:8080',
         changeOrigin: true,
       },
     },

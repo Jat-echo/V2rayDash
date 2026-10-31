@@ -20,19 +20,33 @@ func NewAccountRepository(db *sql.DB) *AccountRepository {
 }
 
 func (r *AccountRepository) Create(req *model.CreateAccountRequest) (*model.Account, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err = lockManagedNodes(tx, []string{req.ServerID}); err != nil {
+		return nil, err
+	}
 	accountUUID := req.UUID
 	if accountUUID == "" {
 		accountUUID = uuid.New().String()
 	}
 
 	var id string
-	err := r.db.QueryRow(
+	err = tx.QueryRow(
 		`INSERT INTO accounts (server_id, uuid, email, protocols)
 		 VALUES ($1, $2, $3, $4)
 		 RETURNING id`,
 		req.ServerID, accountUUID, req.Email, pq.Array(req.Protocols),
 	).Scan(&id)
 	if err != nil {
+		return nil, err
+	}
+	if err = markNodesPending(tx, []string{req.ServerID}); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
 
@@ -59,10 +73,10 @@ func (r *AccountRepository) GetByID(id string) (*model.Account, error) {
 	var a model.Account
 	var protocols pq.StringArray
 	err := r.db.QueryRow(
-		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, transport, created_at, updated_at, COALESCE(combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=accounts.combination_id),'')
 		 FROM accounts WHERE id = $1`,
 		id,
-	).Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt)
+	).Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.Transport, &a.CreatedAt, &a.UpdatedAt, &a.CombinationID, &a.CombinationName)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +86,7 @@ func (r *AccountRepository) GetByID(id string) (*model.Account, error) {
 
 func (r *AccountRepository) ListByServerID(serverID string) ([]*model.Account, error) {
 	rows, err := r.db.Query(
-		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, transport, created_at, updated_at, COALESCE(combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=accounts.combination_id),'')
 		 FROM accounts WHERE server_id = $1 ORDER BY created_at DESC`,
 		serverID,
 	)
@@ -85,7 +99,7 @@ func (r *AccountRepository) ListByServerID(serverID string) ([]*model.Account, e
 	for rows.Next() {
 		var a model.Account
 		var protocols pq.StringArray
-		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.Transport, &a.CreatedAt, &a.UpdatedAt, &a.CombinationID, &a.CombinationName); err != nil {
 			return nil, err
 		}
 		a.Protocols = protocols
@@ -99,7 +113,7 @@ func (r *AccountRepository) ListByServerID(serverID string) ([]*model.Account, e
 
 func (r *AccountRepository) List() ([]*model.Account, error) {
 	rows, err := r.db.Query(
-		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, created_at, updated_at
+		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, transport, created_at, updated_at, COALESCE(combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=accounts.combination_id),'')
 		 FROM accounts ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -111,7 +125,7 @@ func (r *AccountRepository) List() ([]*model.Account, error) {
 	for rows.Next() {
 		var a model.Account
 		var protocols pq.StringArray
-		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.Transport, &a.CreatedAt, &a.UpdatedAt, &a.CombinationID, &a.CombinationName); err != nil {
 			return nil, err
 		}
 		a.Protocols = protocols
@@ -157,6 +171,23 @@ func (r *AccountRepository) Update(id string, req *model.UpdateAccountRequest) e
 	if len(setClauses) == 0 {
 		return nil
 	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var serverID string
+	if err = tx.QueryRow(`SELECT server_id FROM accounts WHERE id=$1`, id).Scan(&serverID); err != nil {
+		return err
+	}
+	if err = lockManagedNodes(tx, []string{serverID}); err != nil {
+		return err
+	}
+	var before, after string
+	const signature = `SELECT jsonb_build_array(uuid,enabled,traffic_limit,protocols,COALESCE(NULLIF(stats_key,''),email))::text FROM accounts WHERE id=$1 FOR UPDATE`
+	if err = tx.QueryRow(signature, id).Scan(&before); err != nil {
+		return err
+	}
 
 	setClauses = append(setClauses, fmt.Sprintf("updated_at = $%d", argNum))
 	args = append(args, time.Now())
@@ -165,13 +196,40 @@ func (r *AccountRepository) Update(id string, req *model.UpdateAccountRequest) e
 	args = append(args, id)
 
 	query := fmt.Sprintf("UPDATE accounts SET %s WHERE id = $%d", strings.Join(setClauses, ", "), argNum)
-	_, err := r.db.Exec(query, args...)
-	return err
+	if _, err = tx.Exec(query, args...); err != nil {
+		return err
+	}
+	if err = tx.QueryRow(signature, id).Scan(&after); err != nil {
+		return err
+	}
+	if before != after {
+		if err = markNodesPending(tx, []string{serverID}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *AccountRepository) Delete(id string) error {
-	_, err := r.db.Exec("DELETE FROM accounts WHERE id = $1", id)
-	return err
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var serverID string
+	if err = tx.QueryRow(`SELECT server_id FROM accounts WHERE id=$1`, id).Scan(&serverID); err != nil {
+		return err
+	}
+	if err = lockManagedNodes(tx, []string{serverID}); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("DELETE FROM accounts WHERE id=$1", id); err != nil {
+		return err
+	}
+	if err = markNodesPending(tx, []string{serverID}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // GetByServerIDAndEmail finds an account by server ID and email (used for traffic attribution)
@@ -179,10 +237,10 @@ func (r *AccountRepository) GetByServerIDAndEmail(serverID, email string) (*mode
 	var a model.Account
 	var protocols pq.StringArray
 	err := r.db.QueryRow(
-		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, created_at, updated_at
-		 FROM accounts WHERE server_id = $1 AND email = $2 LIMIT 1`,
+		`SELECT id, server_id, uuid, email, protocols, enabled, traffic_limit, traffic_used, transport, created_at, updated_at, COALESCE(combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=accounts.combination_id),'')
+		 FROM accounts WHERE server_id = $1 AND COALESCE(NULLIF(stats_key,''),email) = $2 LIMIT 1`,
 		serverID, email,
-	).Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt)
+	).Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols, &a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.Transport, &a.CreatedAt, &a.UpdatedAt, &a.CombinationID, &a.CombinationName)
 	if err != nil {
 		return nil, err
 	}

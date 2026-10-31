@@ -1,0 +1,9 @@
+.node-state { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 16px; line-height: 1; color: var(--text-secondary); vertical-align: middle; }
+.node-state--pending { color: #8b5438; }
+.node-state--publishing { color: #526f7f; }
+.node-state--active { color: #4d6e48; }
+.node-state--failed { color: #9e4545; }
+.node-state:focus-visible { outline: 2px solid var(--text-secondary); outline-offset: 3px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  .node-state .anticon-spin, .node-state .anticon-spin::before { animation: none; }
+}

@@ -62,14 +62,77 @@ func serverFlag(server *model.Server) string {
 			return string([]rune{r1, r2})
 		}
 	}
-	return serverFlag(server)
+	return countryFlag(server.Name)
 }
 
 type RealityConfig struct {
-	Enabled    bool
-	ServerName string
-	PublicKey  string
-	Port       int
+	ShortID           string
+	ShortIDConfigured bool
+	SupportMLKEM      bool
+	Enabled           bool
+	ServerName        string
+	PublicKey         string
+	Port              int
+}
+
+func RealityShortID(server *model.Server) string {
+	if server.Node != nil {
+		return server.Node.ShortID
+	}
+	return "6ba85179e30d4fc2"
+}
+
+func shortID(reality *RealityConfig) string {
+	if reality.ShortIDConfigured || reality.ShortID != "" {
+		return reality.ShortID
+	}
+	return "6ba85179e30d4fc2"
+}
+
+func subscriptionNodeName(account *model.Account, server *model.Server) string {
+	flag := account.ExportFlag
+	if flag == "" {
+		flag = serverFlag(server)
+	}
+	label := server.Name
+	if account.CombinationName != "" {
+		label = account.CombinationName + "（中转）"
+	}
+	return fmt.Sprintf("%s %s-%s", flag, label, string([]rune(account.Email)[:min(len([]rune(account.Email)), 16)]))
+}
+
+func (s *AccountService) RequestSync(serverID string, auth ssh.SSHAuth) {
+	server, err := s.serverRepo.GetByID(serverID)
+	if err != nil {
+		return
+	}
+	if server.Node != nil {
+		_ = s.serverRepo.MarkNodePending(serverID)
+		return
+	}
+	go s.SyncAllToRemote(serverID, auth)
+}
+
+func (s *AccountService) ReadyAccounts(accounts []*model.Account) ([]*model.Account, error) {
+	ready := make([]*model.Account, 0, len(accounts))
+	for _, a := range accounts {
+		if !a.Enabled {
+			continue
+		}
+		ok, err := s.serverRepo.CanExportAccount(a)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			source, err := s.serverRepo.AccountFlagSource(a.ID)
+			if err != nil {
+				return nil, err
+			}
+			a.ExportFlag = serverFlag(source)
+			ready = append(ready, a)
+		}
+	}
+	return ready, nil
 }
 
 type AccountService struct {
@@ -100,8 +163,8 @@ func (s *AccountService) GetAccountLink(account *model.Account, serverIP string,
 	case "vless":
 		if reality != nil && reality.Enabled {
 			// Reality 格式
-			link = fmt.Sprintf("vless://%s@%s:%d?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=6ba85179e30d4fc2&flow=xtls-rprx-vision#%s",
-				account.UUID, serverIP, port, reality.ServerName, reality.PublicKey, remark)
+			link = fmt.Sprintf("vless://%s@%s:%d?encryption=none&security=reality&sni=%s&fp=chrome&pbk=%s&sid=%s&flow=xtls-rprx-vision#%s",
+				account.UUID, serverIP, port, reality.ServerName, reality.PublicKey, shortID(reality), remark)
 		} else {
 			// 普通 TLS 格式
 			link = fmt.Sprintf("vless://%s@%s:%d?encryption=none&flow=xtls-rprx-vision&security=tls&sni=%s#%s",
@@ -163,20 +226,21 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 		var proxy map[string]interface{}
 		if reality != nil && reality.Enabled {
 			proxy = map[string]interface{}{
-				"name":                   nodeName,
-				"type":                   "vless",
-				"server":                 serverIP,
-				"port":                   port,
-				"uuid":                   acc.UUID,
-				"network":                "tcp",
-				"tls":                    true,
-				"udp":                    true,
-				"flow":                   "xtls-rprx-vision",
-				"servername":             reality.ServerName,
-				"client-fingerprint":     "chrome",
+				"name":               nodeName,
+				"type":               "vless",
+				"server":             serverIP,
+				"port":               port,
+				"uuid":               acc.UUID,
+				"network":            "tcp",
+				"tls":                true,
+				"udp":                true,
+				"flow":               "xtls-rprx-vision",
+				"servername":         reality.ServerName,
+				"client-fingerprint": "chrome",
 				"reality-opts": map[string]interface{}{
-					"public-key": reality.PublicKey,
-					"short-id":   "6ba85179e30d4fc2",
+					"public-key":             reality.PublicKey,
+					"short-id":               shortID(reality),
+					"support-x25519mlkem768": reality.SupportMLKEM,
 				},
 			}
 		} else {
@@ -201,16 +265,16 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 
 	// 使用用户提供的模板格式
 	config := map[string]interface{}{
-		"port":                     7890,
-		"allow-lan":                true,
-		"log-level":                "info",
-		"external-controller":      "0.0.0.0:9090",
+		"port":                7890,
+		"allow-lan":           true,
+		"log-level":           "info",
+		"external-controller": "0.0.0.0:9090",
 		"dns": map[string]interface{}{
-			"enabled":          true,
-			"listen":           "0.0.0.0:1053",
-			"ipv6":              true,
-			"enhanced-mode":    "fake-ip",
-			"fake-ip-range":    "198.18.0.1/16",
+			"enable":        true,
+			"listen":        "0.0.0.0:1053",
+			"ipv6":          true,
+			"enhanced-mode": "fake-ip",
+			"fake-ip-range": "198.18.0.1/16",
 			"fake-ip-filter": []string{
 				"*.lan",
 				"*.linksys.com",
@@ -284,7 +348,7 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 				},
 			},
 		},
-		"proxies":       proxies,
+		"proxies":      proxies,
 		"proxy-groups": buildProxyGroups(proxyNames),
 		"rules":        buildClashRules(),
 	}
@@ -304,16 +368,16 @@ func buildProxyGroups(proxyNames []string) []map[string]interface{} {
 
 	groups := []map[string]interface{}{
 		{
-			"name": "PROXY",
-			"type": "select",
+			"name":    "PROXY",
+			"type":    "select",
 			"proxies": append([]string{"URLTest AutoSelect", "Fallback"}, proxyNames...),
 		},
 		{
-			"name":     "URLTest AutoSelect",
-			"type":     "url-test",
-			"proxies":  proxyNames,
-			"url":      "http://www.gstatic.com/generate_204",
-			"interval": 300,
+			"name":      "URLTest AutoSelect",
+			"type":      "url-test",
+			"proxies":   proxyNames,
+			"url":       "http://www.gstatic.com/generate_204",
+			"interval":  300,
 			"tolerance": 50,
 		},
 		{
@@ -1283,35 +1347,35 @@ func (s *AccountService) GenerateSingBoxSubscription(accounts []*model.Account, 
 		if reality != nil && reality.Enabled {
 			outbound = map[string]interface{}{
 				"tag":         acc.Email,
-				"type":       "vless",
-				"server":     serverIP,
+				"type":        "vless",
+				"server":      serverIP,
 				"server_port": 443,
-				"uuid":       acc.UUID,
-				"flow":       "xtls-rprx-vision",
+				"uuid":        acc.UUID,
+				"flow":        "xtls-rprx-vision",
 				"tls": map[string]interface{}{
-					"enabled":    true,
+					"enabled":     true,
 					"server_name": reality.ServerName,
 					"utls": map[string]interface{}{
-						"enabled":    true,
+						"enabled":     true,
 						"fingerprint": "chrome",
 					},
 					"reality": map[string]interface{}{
-						"enabled":   true,
+						"enabled":    true,
 						"public_key": reality.PublicKey,
-						"short_id":  "6ba85179e30d4fc2",
+						"short_id":   shortID(reality),
 					},
 				},
 			}
 		} else {
 			outbound = map[string]interface{}{
 				"tag":         acc.Email,
-				"type":       "vless",
-				"server":     serverIP,
+				"type":        "vless",
+				"server":      serverIP,
 				"server_port": 443,
-				"uuid":       acc.UUID,
-				"flow":       "xtls-rprx-vision",
+				"uuid":        acc.UUID,
+				"flow":        "xtls-rprx-vision",
 				"tls": map[string]interface{}{
-					"enabled":    true,
+					"enabled":     true,
 					"server_name": serverIP,
 				},
 			}
@@ -1335,13 +1399,17 @@ func (s *AccountService) SyncAllToRemote(serverID string, auth ssh.SSHAuth) erro
 	if err != nil {
 		return err
 	}
+	if server.Node != nil {
+		_, err := NewNodeService(s.accountRepo, s.serverRepo).Publish(serverID)
+		return err
+	}
 
 	accounts, err := s.accountRepo.ListByServerID(serverID)
 	if err != nil {
 		return err
 	}
 
-	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	client, err := NewServerSSHClient(s.serverRepo, server, auth)
 	if err != nil {
 		return fmt.Errorf("ssh connect failed: %w", err)
 	}
@@ -1486,7 +1554,7 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 		return fmt.Errorf("server not found: %s", account.ServerID)
 	}
 
-	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	client, err := NewServerSSHClient(s.serverRepo, server, auth)
 	if err != nil {
 		return err
 	}
@@ -1506,12 +1574,12 @@ func (s *AccountService) SyncToRemote(accountID string, auth ssh.SSHAuth) error 
 		},
 		"inbounds": []map[string]interface{}{
 			{
-				"port": 443,
+				"port":     443,
 				"protocol": "vless",
 				"settings": map[string]interface{}{
 					"clients": []map[string]interface{}{
 						{
-							"id": account.UUID,
+							"id":    account.UUID,
 							"email": account.Email,
 						},
 					},
@@ -1543,7 +1611,7 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 		return nil, err
 	}
 
-	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, auth)
+	client, err := NewServerSSHClient(s.serverRepo, server, auth)
 	if err != nil {
 		return nil, err
 	}
@@ -1572,7 +1640,7 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 		// 尝试解析为标准格式
 		var config struct {
 			Inbounds []struct {
-				Port     int `json:"port"`
+				Port     int    `json:"port"`
 				Listen   string `json:"listen"`
 				Settings struct {
 					Clients []struct {
@@ -1581,8 +1649,8 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 					} `json:"clients"`
 				} `json:"settings"`
 				StreamSettings struct {
-					ServerName string   `json:"serverName"`
-					Security   string   `json:"security"`
+					ServerName      string `json:"serverName"`
+					Security        string `json:"security"`
 					RealitySettings struct {
 						PublicKey   string   `json:"publicKey"`
 						ServerNames []string `json:"serverNames"`
@@ -1651,7 +1719,7 @@ func (s *AccountService) ImportFromRemote(serverID string, auth ssh.SSHAuth) ([]
 	// 如果解析到端口且检测到 Reality，更新服务器配置
 	if parsedPort > 0 && publicKeyFound {
 		s.serverRepo.Update(serverID, &model.UpdateServerRequest{
-			RealityEnabled:   &realityEnabled,
+			RealityEnabled:    &realityEnabled,
 			RealityPublicKey:  &publicKey,
 			RealityServerName: &serverName,
 			RealityPort:       &parsedPort,
@@ -1677,7 +1745,7 @@ func (s *AccountService) GenerateVLESSSubscriptionMulti(accounts []*model.Accoun
 			continue
 		}
 		reality := realityConfigs[acc.ServerID]
-		remark := fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)])
+		remark := subscriptionNodeName(acc, server)
 		link := s.GetAccountLink(acc, server.IP, "vless", reality, remark)
 		lines = append(lines, link)
 	}
@@ -1704,25 +1772,26 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 			port = reality.Port
 		}
 
-		nodeName := fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)])
+		nodeName := subscriptionNodeName(acc, server)
 
 		var proxy map[string]interface{}
 		if reality != nil && reality.Enabled {
 			proxy = map[string]interface{}{
-				"name":                   nodeName,
-				"type":                   "vless",
-				"server":                 server.IP,
-				"port":                   port,
-				"uuid":                   acc.UUID,
-				"network":                "tcp",
-				"tls":                    true,
-				"udp":                    true,
-				"flow":                   "xtls-rprx-vision",
-				"servername":             reality.ServerName,
-				"client-fingerprint":     "chrome",
+				"name":               nodeName,
+				"type":               "vless",
+				"server":             server.IP,
+				"port":               port,
+				"uuid":               acc.UUID,
+				"network":            "tcp",
+				"tls":                true,
+				"udp":                true,
+				"flow":               "xtls-rprx-vision",
+				"servername":         reality.ServerName,
+				"client-fingerprint": "chrome",
 				"reality-opts": map[string]interface{}{
-					"public-key": reality.PublicKey,
-					"short-id":   "6ba85179e30d4fc2",
+					"public-key":             reality.PublicKey,
+					"short-id":               shortID(reality),
+					"support-x25519mlkem768": reality.SupportMLKEM,
 				},
 			}
 		} else {
@@ -1744,16 +1813,16 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 	}
 
 	config := map[string]interface{}{
-		"port":                     7890,
-		"allow-lan":                true,
-		"log-level":                "info",
-		"external-controller":      "0.0.0.0:9090",
+		"port":                7890,
+		"allow-lan":           true,
+		"log-level":           "info",
+		"external-controller": "0.0.0.0:9090",
 		"dns": map[string]interface{}{
-			"enabled":          true,
-			"listen":           "0.0.0.0:1053",
-			"ipv6":              true,
-			"enhanced-mode":    "fake-ip",
-			"fake-ip-range":    "198.18.0.1/16",
+			"enable":        true,
+			"listen":        "0.0.0.0:1053",
+			"ipv6":          true,
+			"enhanced-mode": "fake-ip",
+			"fake-ip-range": "198.18.0.1/16",
 			"fake-ip-filter": []string{
 				"*.lan", "*.linksys.com", "*.linksyssmartwifi.com",
 				"swscan.apple.com", "mesu.apple.com",
@@ -1780,11 +1849,11 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 				"https://dns.alidns.com/dns-query",
 			},
 			"fallback-filter": map[string]interface{}{
-				"geoip": false,
+				"geoip":  false,
 				"ipcidr": []string{"240.0.0.0/4", "0.0.0.0/32"},
 			},
 		},
-		"proxies":       proxies,
+		"proxies":      proxies,
 		"proxy-groups": buildProxyGroups(proxyNames),
 		"rules":        buildClashRules(),
 	}
@@ -1813,36 +1882,36 @@ func (s *AccountService) GenerateSingBoxSubscriptionMulti(accounts []*model.Acco
 		var outbound map[string]interface{}
 		if reality != nil && reality.Enabled {
 			outbound = map[string]interface{}{
-				"tag":         fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)]),
-				"type":       "vless",
-				"server":     server.IP,
+				"tag":         subscriptionNodeName(acc, server),
+				"type":        "vless",
+				"server":      server.IP,
 				"server_port": 443,
-				"uuid":       acc.UUID,
-				"flow":       "xtls-rprx-vision",
+				"uuid":        acc.UUID,
+				"flow":        "xtls-rprx-vision",
 				"tls": map[string]interface{}{
-					"enabled":    true,
+					"enabled":     true,
 					"server_name": reality.ServerName,
 					"utls": map[string]interface{}{
-						"enabled":    true,
+						"enabled":     true,
 						"fingerprint": "chrome",
 					},
 					"reality": map[string]interface{}{
-						"enabled":   true,
+						"enabled":    true,
 						"public_key": reality.PublicKey,
-						"short_id":  "6ba85179e30d4fc2",
+						"short_id":   shortID(reality),
 					},
 				},
 			}
 		} else {
 			outbound = map[string]interface{}{
-				"tag":         fmt.Sprintf("%s %s-%s", serverFlag(server), server.Name, acc.Email[:min(len(acc.Email), 16)]),
-				"type":       "vless",
-				"server":     server.IP,
+				"tag":         subscriptionNodeName(acc, server),
+				"type":        "vless",
+				"server":      server.IP,
 				"server_port": 443,
-				"uuid":       acc.UUID,
-				"flow":       "xtls-rprx-vision",
+				"uuid":        acc.UUID,
+				"flow":        "xtls-rprx-vision",
 				"tls": map[string]interface{}{
-					"enabled":    true,
+					"enabled":     true,
 					"server_name": server.IP,
 				},
 			}

@@ -10,9 +10,10 @@ type SubscriptionAccount struct {
 }
 
 type AccountMapping struct {
-	ServerID   string `json:"server_id"`
-	AccountID  string `json:"account_id"`
-	AutoCreate bool   `json:"auto_create"`
+	CombinationID string `json:"combination_id"`
+	ServerID      string `json:"server_id"`
+	AccountID     string `json:"account_id"`
+	AutoCreate    bool   `json:"auto_create"`
 }
 
 type AccountWithServerInfo struct {

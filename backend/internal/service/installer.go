@@ -10,45 +10,43 @@ import (
 	"strings"
 	"time"
 
+	"v2ray-dash/backend/internal/model"
+	"v2ray-dash/backend/internal/repository"
 	"v2ray-dash/backend/internal/ssh"
 )
 
 type InstallResult struct {
 	Success       bool
 	Error         string
-	GeneratedUUID string            // 安装脚本生成的UUID
-	RealityConfig *RealityConfig    // Reality配置（如果启用了Reality协议）
-	RealityPort   int               // Reality端口
+	GeneratedUUID string         // 安装脚本生成的UUID
+	RealityConfig *RealityConfig // Reality配置（如果启用了Reality协议）
+	RealityPort   int            // Reality端口
 }
 
 type InstallConfig struct {
-	Core            string // "xray-core" or "sing-box"
-	UUID            string
-	ServerName      string // Reality SNI
-	Port            int    // 监听端口，0 表示由脚本随机分配
-	Protocols       []string
-	ServerID        string // 服务器ID，用于Agent
+	Core             string // "xray-core" or "sing-box"
+	UUID             string
+	ServerName       string // Reality SNI
+	Port             int    // 监听端口，0 表示由脚本随机分配
+	Protocols        []string
+	ServerID         string // 服务器ID，用于Agent
 	ControlCenterURL string // 控制中心URL
-	InstallAgent    bool   // 是否安装Agent
+	InstallAgent     bool   // 是否安装Agent
 }
 
 type Installer struct {
 	serverID   string
-	host       string
-	port       int
-	user       string
-	auth       ssh.SSHAuth
+	server     *model.Server
+	servers    *repository.ServerRepository
 	scriptPath string
 	timeout    time.Duration
 }
 
-func NewInstaller(serverID, host string, port int, user string, auth ssh.SSHAuth, scriptPath string) *Installer {
+func NewInstaller(server *model.Server, servers *repository.ServerRepository, scriptPath string) *Installer {
 	return &Installer{
-		serverID:   serverID,
-		host:       host,
-		port:       port,
-		user:       user,
-		auth:       auth,
+		serverID:   server.ID,
+		server:     server,
+		servers:    servers,
 		scriptPath: scriptPath,
 		timeout:    10 * time.Minute,
 	}
@@ -72,8 +70,8 @@ func validateInstallConfig(config *InstallConfig) *InstallResult {
 
 func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallResult {
 	// 1. 连接 SSH
-	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.host, i.port)
-	sshClient, err := ssh.NewSSHClient(i.host, i.port, i.user, i.auth)
+	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.server.IP, i.server.SSHPort)
+	sshClient, err := NewServerSSHClient(i.servers, i.server, nil)
 	if err != nil {
 		return &InstallResult{Success: false, Error: fmt.Sprintf("SSH连接失败: %v", err)}
 	}
@@ -191,9 +189,9 @@ func (i *Installer) Install(output io.Writer, config *InstallConfig) *InstallRes
 
 	return &InstallResult{
 		Success:       true,
-		GeneratedUUID:  generatedUUID,
-		RealityConfig:   realityConfig,
-		RealityPort:     realityPort,
+		GeneratedUUID: generatedUUID,
+		RealityConfig: realityConfig,
+		RealityPort:   realityPort,
 	}
 }
 
@@ -208,8 +206,8 @@ func (i *Installer) InstallStreaming(w io.Writer, flusher http.Flusher, config *
 	output := &streamingWriter{w: w, flusher: flusher}
 
 	// 1. 连接 SSH
-	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.host, i.port)
-	sshClient, err := ssh.NewSSHClient(i.host, i.port, i.user, i.auth)
+	fmt.Fprintf(output, "[%s] 正在连接到 %s:%d...\n", time.Now().Format("15:04:05"), i.server.IP, i.server.SSHPort)
+	sshClient, err := NewServerSSHClient(i.servers, i.server, nil)
 	if err != nil {
 		fmt.Fprintf(output, "[ERROR] SSH连接失败: %v\n", err)
 		return &InstallResult{Success: false, Error: fmt.Sprintf("SSH连接失败: %v", err)}
@@ -444,7 +442,7 @@ func (i *Installer) fetchRealityConfig(client *ssh.SSHClient, core, serverName s
 }
 
 // shellEscapeSQ escapes a string for safe embedding inside single-quoted shell
-// arguments by replacing each single quote with '\'' (end-quote, literal quote,
+// arguments by replacing each single quote with '\” (end-quote, literal quote,
 // re-open-quote). In single-quoted context all other characters including $ and
 // backticks are literal, so this is the only escaping required.
 func shellEscapeSQ(s string) string {

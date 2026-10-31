@@ -1,11 +1,12 @@
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Layout, Spin, Dropdown, Avatar } from 'antd'
+import { Layout, Spin, Dropdown, Avatar, Alert } from 'antd'
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { UserOutlined, LogoutOutlined } from '@ant-design/icons'
 import LoginPage from './pages/login'
 import SetupPage from './pages/setup'
 import { authAPI } from './services/api'
 
+const RelayPage = lazy(() => import('./pages/relays'))
 const ServerList = lazy(() => import('./pages/servers'))
 const SubscriptionList = lazy(() => import('./pages/subscriptions'))
 const Settings = lazy(() => import('./pages/settings'))
@@ -29,6 +30,13 @@ const SubIcon = () => (
   </svg>
 )
 
+const RelayIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <circle cx="4" cy="12" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="20" cy="19" r="2"/>
+    <path d="M6 12h5m0 0V5h7m-7 7v7h7"/>
+  </svg>
+)
+
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
     <circle cx="12" cy="12" r="3"/>
@@ -45,7 +53,8 @@ const ClientIcon = () => (
 )
 
 const navItems = [
-  { path: '/servers', label: '服务器', icon: <ServerIcon /> },
+  { path: '/servers', label: '节点', icon: <ServerIcon /> },
+  { path: '/relays', label: '代理链路', icon: <RelayIcon /> },
   { path: '/subscriptions', label: '订阅', icon: <SubIcon /> },
   { path: '/clients', label: '客户端', icon: <ClientIcon /> },
   { path: '/settings', label: '设置', icon: <SettingsIcon /> },
@@ -193,10 +202,12 @@ function App() {
           </header>
 
           <Content className="app-content" style={{ padding: '28px 32px' }}>
+            {import.meta.env.VITE_PREVIEW === 'true' && <Alert type="info" showIcon style={{ marginBottom: 24 }} message="本地预览 · 示例账号与数据，尚未接管线上节点" />}
             <Suspense fallback={<div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Spin size="large" /></div>}>
               <Routes>
                 <Route path="/" element={<Navigate to="/servers" replace />} />
                 <Route path="/servers" element={<ServerList />} />
+                <Route path="/relays" element={<RelayPage />} />
                 <Route path="/subscriptions" element={<SubscriptionList />} />
                 <Route path="/clients" element={<ClientDownload />} />
                 <Route path="/settings" element={<Settings />} />

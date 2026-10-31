@@ -3,15 +3,18 @@ import { Table, Button, Space, Modal, Form, Input, InputNumber, Select, message,
 import { CloudUploadOutlined, EditOutlined, TeamOutlined, ReloadOutlined, DeleteOutlined, UploadOutlined, HddOutlined, CheckCircleOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { serverAPI, accountAPI, logAPI, subscriptionAPI, Server, Account, Subscription, NodeStatusResponse, MetricPoint, BandwidthPoint } from '../../services/api'
 import { formatBytes } from '../../utils/format'
+import NodeActions, { NodeState, apiError } from '../../components/NodeActions'
+import '../relays/relays.css'
 import { FlagName } from '../../components/FlagName'
+import {isDirectAccount, serverRole} from '../../utils/node-targets'
 
 function getSubAssignStatus(
   sub: Subscription,
   serverId: string,
   serverAccounts: Account[],
 ): 'assigned' | 'existing' | 'new' {
-  if (sub.accounts?.some(a => a.server_id === serverId)) return 'assigned'
-  if (serverAccounts.some(a => a.email === sub.name)) return 'existing'
+  if (sub.accounts?.some(a => isDirectAccount(a, serverId))) return 'assigned'
+  if (serverAccounts.some(a => isDirectAccount(a, serverId) && a.email === sub.name)) return 'existing'
   return 'new'
 }
 
@@ -84,7 +87,7 @@ export default function ServerList() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedServerForAccounts, setSelectedServerForAccounts] = useState<Server | null>(null)
   const [addAccountForm] = Form.useForm()
-  const installOutputRef = useRef<HTMLDivElement>(null)
+  const installOutputRef = useRef<HTMLPreElement>(null)
   const [editModalVisible, setEditModalVisible] = useState(false)
   const [editingServer, setEditingServer] = useState<Server | null>(null)
   const [editForm] = Form.useForm()
@@ -134,7 +137,7 @@ export default function ServerList() {
       }
       setStatuses(statusMap)
     } catch (e) {
-      message.error(`加载服务器列表失败：${(e as any)?.message || '请检查网络连接'}`)
+      message.error(`加载节点列表失败：${(e as any)?.message || '请检查网络连接'}`)
       setServers([])
     } finally {
       setLoading(false)
@@ -159,6 +162,13 @@ export default function ServerList() {
   useEffect(() => {
     loadServers()
   }, [timeRange])
+
+  const hasPublishingNode = servers.some(server => server.node?.state === 'publishing' || server.node?.state === 'pending')
+  useEffect(() => {
+    if (!hasPublishingNode) return
+    const timer = window.setInterval(() => { serverAPI.list().then(setServers).catch(() => {}) }, 2000)
+    return () => window.clearInterval(timer)
+  }, [hasPublishingNode])
 
   useEffect(() => {
     pingAll()
@@ -205,73 +215,30 @@ export default function ServerList() {
     }
   }
 
-  const handleAssign = async () => {
-    if (!selectedServerForAccounts || assignSelected.length === 0) return
-    setAssignSubmitting(true)
-    let succeeded = 0, failed = 0
+  const changeAssignments = async (action: 'add' | 'remove') => {
+    const selected = action === 'add' ? assignSelected : deleteSelected
+    if (!selectedServerForAccounts || !selected.length || assignSubmitting || deleteSubmitting) return
+    const setSubmitting = action === 'add' ? setAssignSubmitting : setDeleteSubmitting
+    setSubmitting(true)
     try {
-      for (const id of assignSelected) {
-        try {
-          await subscriptionAPI.addAccount(id, {
-            server_id: selectedServerForAccounts.id,
-            auto_create: true,
-          })
-          succeeded++
-        } catch {
-          failed++
-        }
-      }
-      if (failed === 0) {
-        message.success(`成功分配 ${succeeded} 个订阅`)
-      } else {
-        message.warning(`${succeeded} 个成功，${failed} 个失败`)
-      }
-      try {
-        await serverAPI.syncXray(selectedServerForAccounts.id)
-      } catch {
-        message.warning('xray 同步失败，请手动点击同步按钮')
-      }
-      setAssignSelected([])
+      const {results} = await subscriptionAPI.batch({action,server_id:selectedServerForAccounts.id,subscription_ids:selected})
+      const failed = results.filter(item => item.status === 'failed')
+      if (failed.length) message.warning(`${results.length - failed.length} 个成功，${failed.length} 个失败：${failed[0].error}`)
+      else message.success(action === 'add' ? `已分配 ${results.length} 份订阅` : `已解除 ${results.length} 份订阅的关联`)
       await loadAssignData()
+      const retryIDs = failed.map(item => item.id!)
+      if (action === 'add') setAssignSelected(retryIDs)
+      else setDeleteSelected(retryIDs)
+      await loadAccounts(selectedServerForAccounts.id)
+      await loadServers()
+    } catch (error) {
+      message.error(apiError(error,'关联操作失败，请重试'))
     } finally {
-      setAssignSubmitting(false)
+      setSubmitting(false)
     }
   }
-
-  const handleDeleteAssign = async () => {
-    if (!selectedServerForAccounts || deleteSelected.length === 0) return
-    setDeleteSubmitting(true)
-    const serverId = selectedServerForAccounts.id
-    try {
-      const results = await Promise.allSettled(
-        deleteSelected.map(subId => {
-          const sub = assignSubs.find(s => s.id === subId)
-          const acc = sub?.accounts?.find(a => a.server_id === serverId)
-          if (!acc) return Promise.reject(new Error('account not found'))
-          return Promise.all([
-            subscriptionAPI.removeAccount(subId, acc.id),
-            accountAPI.delete(acc.id),
-          ])
-        })
-      )
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-      if (failed === 0) {
-        message.success(`已删除 ${succeeded} 个关联`)
-      } else {
-        message.warning(`${succeeded} 个成功，${failed} 个失败`)
-      }
-      try {
-        await serverAPI.syncXray(selectedServerForAccounts.id)
-      } catch {
-        message.warning('xray 同步失败，请手动点击同步按钮')
-      }
-      setDeleteSelected([])
-      await loadAssignData()
-    } finally {
-      setDeleteSubmitting(false)
-    }
-  }
+  const handleAssign = () => changeAssignments('add')
+  const handleDeleteAssign = () => changeAssignments('remove')
 
   const handleAdd = async (values: any) => {
     try {
@@ -282,7 +249,7 @@ export default function ServerList() {
       setSshKeyType('key')
       loadServers()
     } catch (e) {
-      message.error(`添加服务器失败：${(e as any)?.message || '请检查填写内容'}`)
+      message.error(`添加节点失败：${(e as any)?.message || '请检查填写内容'}`)
     }
   }
 
@@ -309,14 +276,16 @@ export default function ServerList() {
     }
   }
 
-  const handleSyncXray = async (serverId: string, e: React.MouseEvent) => {
+  const handleSyncXray = async (server: Server, e: React.MouseEvent) => {
     e.stopPropagation()
-    setSyncingXray(serverId)
+    setSyncingXray(server.id)
     try {
-      await serverAPI.syncXray(serverId)
-      message.success('xray 配置同步成功')
-    } catch {
-      message.error('xray 同步失败')
+      await serverAPI.syncXray(server.id)
+      if (server.node) message.info('正在同步配置，可在配置状态中查看结果')
+      else message.success('xray 配置同步成功')
+      await loadServers()
+    } catch (error) {
+      message.error(apiError(error, 'xray 配置同步失败'))
     } finally {
       setSyncingXray(null)
     }
@@ -327,12 +296,14 @@ export default function ServerList() {
     setEditSshKeyType(server.ssh_key_type || 'key')
     editForm.setFieldsValue({
       name: server.name,
+      role: serverRole(server),
       ip: server.ip,
       ssh_port: server.ssh_port,
+      ssh_jump_server_id: server.ssh_jump_server_id || '',
       ssh_user: server.ssh_user,
       ssh_key_type: server.ssh_key_type,
-      ssh_key: server.ssh_key,
-      ssh_password: server.ssh_password,
+      ssh_key: undefined,
+      ssh_password: undefined,
     })
     setEditModalVisible(true)
   }
@@ -348,7 +319,7 @@ export default function ServerList() {
       setEditingServer(null)
       loadServers()
     } catch (e) {
-      message.error('编辑失败')
+      message.error(apiError(e,'编辑失败'))
     }
   }
 
@@ -393,7 +364,7 @@ export default function ServerList() {
 
       const decoder = new TextDecoder()
 
-      function read() {
+      const read = () => {
         reader.read().then(({ done, value }) => {
           if (done) {
             setInstalling(false)
@@ -451,6 +422,7 @@ export default function ServerList() {
     try {
       const data = await accountAPI.listByServer(serverId)
       setAccounts(data || [])
+      serverAPI.list().then(setServers).catch(() => {})
     } catch (e) {
       setAccounts([])
     }
@@ -519,6 +491,7 @@ export default function ServerList() {
   const columns = [
     { title: '名称', dataIndex: 'name', render: (v: string, record: any) => <FlagName name={v} countryCode={record.country_code} /> },
     { title: 'IP', dataIndex: 'ip' },
+    { title: '角色 / 配置', render: (_: unknown, server: Server) => <Space size={8}><span>{serverRole(server) === 'relay' ? '中转节点' : '落地节点'}</span><NodeState node={server.node} /></Space> },
     { title: 'SSH端口', dataIndex: 'ssh_port' },
     { title: 'SSH用户', dataIndex: 'ssh_user' },
     { title: '认证方式', dataIndex: 'ssh_key_type', render: (v: string) => v === 'password' ? '密码' : '密钥' },
@@ -567,9 +540,10 @@ export default function ServerList() {
     {
       title: '操作',
       render: (_: any, record: Server) => (
-        <Space>
-          <Button size="small" type="primary" icon={<CloudUploadOutlined />} aria-label="安装 Agent" title="安装 Agent" onClick={(e) => { e.stopPropagation(); handleInstallClick(record); }} />
-          <Button size="small" icon={<EditOutlined />} aria-label="编辑服务器" title="编辑" onClick={(e) => { e.stopPropagation(); handleEditClick(record); }} />
+        <Space wrap size={4}>
+          <NodeActions server={record} onChange={() => void loadServers()} />
+          {!record.node && <Button size="small" icon={<CloudUploadOutlined />} aria-label="安装代理与 Agent" title="安装代理与 Agent" onClick={(e) => { e.stopPropagation(); handleInstallClick(record); }} />}
+          <Button size="small" icon={<EditOutlined />} aria-label="编辑节点" title="编辑" onClick={(e) => { e.stopPropagation(); handleEditClick(record); }} />
           <Button size="small" icon={<TeamOutlined />} aria-label="账号管理" title="账号管理" onClick={(e) => { e.stopPropagation(); handleOpenAccountModal(record); }} />
           <Button
             size="small"
@@ -582,13 +556,14 @@ export default function ServerList() {
           <Button
             size="small"
             icon={<UploadOutlined />}
-            aria-label="同步 xray 配置"
-            title="同步 xray 配置"
-            loading={syncingXray === record.id}
-            onClick={(e) => handleSyncXray(record.id, e)}
+            aria-label={record.node?.state === 'failed' ? '重试同步' : '立即同步'}
+            title={record.node?.state === 'failed' ? '重试同步' : '立即同步'}
+            loading={syncingXray === record.id || record.node?.state === 'publishing'}
+            disabled={record.node?.state === 'publishing'}
+            onClick={(e) => handleSyncXray(record, e)}
           />
           <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
-            <Button size="small" danger icon={<DeleteOutlined />} aria-label="删除服务器" title="删除" onClick={(e) => e.stopPropagation()} />
+            <Button size="small" danger icon={<DeleteOutlined />} aria-label="删除节点" title="删除" onClick={(e) => e.stopPropagation()} />
           </Popconfirm>
         </Space>
       ),
@@ -600,8 +575,8 @@ export default function ServerList() {
       {/* Page Header */}
       <div className="page-header-row">
         <div>
-          <h1>服务器管理</h1>
-          <p>管理您的 V2ray 服务器和账号</p>
+          <h1>节点管理</h1>
+          <p>管理您的 V2ray 节点和账号</p>
         </div>
         <Space style={{ marginTop: 6 }}>
           <Button
@@ -611,7 +586,7 @@ export default function ServerList() {
           >
             测速
           </Button>
-          <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加服务器</Button>
+          <Button type="primary" onClick={() => setModalVisible(true)}>+ 添加节点</Button>
         </Space>
       </div>
 
@@ -621,14 +596,14 @@ export default function ServerList() {
           <div className="stat-icon rose"><HddOutlined style={{ fontSize: 22, color: 'var(--morandi-dusty-rose)' }} /></div>
           <div className="stat-content">
             <h3>{servers.length}</h3>
-            <p>服务器总数</p>
+            <p>节点总数</p>
           </div>
         </div>
         <div className="stat-card animate-in animate-delay-2">
           <div className="stat-icon sage"><CheckCircleOutlined style={{ fontSize: 22, color: 'var(--morandi-sage)' }} /></div>
           <div className="stat-content">
             <h3>{servers.filter(s => s.status === 'online').length}</h3>
-            <p>在线服务器</p>
+            <p>在线节点</p>
           </div>
         </div>
       </div>
@@ -703,7 +678,7 @@ export default function ServerList() {
       </Card>
 
       <Modal
-        title="添加服务器"
+        title="添加节点"
         open={modalVisible}
         onCancel={() => {
           setModalVisible(false)
@@ -716,6 +691,7 @@ export default function ServerList() {
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input autoComplete="off" />
           </Form.Item>
+          <Form.Item name="role" label="节点类型" initialValue="exit"><Select options={[{value:'exit',label:'落地节点（支持直连）'},{value:'relay',label:'中转节点'}]} /></Form.Item>
           <Form.Item name="ip" label="IP地址" rules={[{ required: true }]}>
             <Input autoComplete="off" />
           </Form.Item>
@@ -724,6 +700,9 @@ export default function ServerList() {
           </Form.Item>
           <Form.Item name="ssh_user" label="SSH用户" initialValue="root">
             <Input autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="ssh_jump_server_id" label="SSH 管理跳板" initialValue="" extra="只用于平台连接 SSH，不改变客户端节点地址。">
+            <Select options={[{value: '', label: '直接连接（默认）'}, ...servers.filter(s => serverRole(s) === 'relay' && s.node && !s.ssh_jump_server_id).map(s => ({value: s.id, label: s.name}))]} />
           </Form.Item>
           <Form.Item name="ssh_key_type" label="认证方式" initialValue="key">
             <Select onChange={(v) => setSshKeyType(v)}>
@@ -754,8 +733,8 @@ export default function ServerList() {
         cancelText="取消"
       >
         <Alert
-          message="警告：重新安装会覆盖远程服务器上的所有配置"
-          description="远程服务器的现有账号、协议配置会被清除。控制中心保存的账号不受影响。建议重新安装前先从远程导入账号。"
+          message="警告：重新安装会覆盖远程节点上的所有配置"
+          description="远程节点的现有账号、协议配置会被清除。控制中心保存的账号不受影响。建议重新安装前先从远程导入账号。"
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
@@ -874,14 +853,14 @@ export default function ServerList() {
                       <Button onClick={() => addAccountForm.resetFields()}>清空</Button>
                     </Space>
                   </div>
-                  <Form form={addAccountForm} onFinish={handleAddAccount} layout="inline" style={{ marginBottom: 16 }}>
+                  {selectedServerForAccounts?.role === 'relay' ? <Alert style={{ marginBottom: 16 }} type="info" message={<span>中转账号由订阅选择链路时自动创建，请前往 <a href="/relays">代理链路</a> 定义路径，再分配给订阅。</span>} /> : <Form form={addAccountForm} onFinish={handleAddAccount} layout="inline" style={{ marginBottom: 16 }}>
                     <Form.Item name="email" label="备注" rules={[{ required: true }]}>
                       <Input placeholder="账号名称" style={{ width: 200 }} />
                     </Form.Item>
                     <Form.Item>
                       <Button type="primary" htmlType="submit">确定</Button>
                     </Form.Item>
-                  </Form>
+                  </Form>}
                   <Table
                     dataSource={accounts}
                     rowKey="id"
@@ -987,19 +966,19 @@ export default function ServerList() {
                           </div>
                           <div style={{ marginTop: 12, textAlign: 'left' }}>
                             <Popconfirm
-                              title={`确定解除关联并删除这 ${deleteSelected.length} 个账号吗？此操作不可恢复。`}
+                              title={`解除这 ${deleteSelected.length} 份订阅的关联并清理未使用的账号？`}
                               onConfirm={handleDeleteAssign}
                               disabled={deleteSelected.length === 0}
-                              okText="确认删除"
+                              okText="解除关联"
                               cancelText="取消"
                               okButtonProps={{ danger: true }}
                             >
                               <Button
                                 danger
                                 loading={deleteSubmitting}
-                                disabled={deleteSelected.length === 0}
+                                disabled={deleteSelected.length === 0 || deleteSelected.length > 200 || assignSubmitting || deleteSubmitting}
                               >
-                                删除关联（已选 {deleteSelected.length} 个）
+                                解除关联（已选 {deleteSelected.length} 个）
                               </Button>
                             </Popconfirm>
                           </div>
@@ -1022,7 +1001,7 @@ export default function ServerList() {
                             {selectableSubs.map(sub => {
                               const status = statusCache.get(sub.id)!
                               const existingAcc = status === 'existing'
-                                ? assignServerAccounts.find(a => a.email === sub.name)
+                                ? assignServerAccounts.find(a => isDirectAccount(a,serverId) && a.email === sub.name)
                                 : undefined
                               return (
                                 <div
@@ -1069,7 +1048,7 @@ export default function ServerList() {
                             <Button
                               type="primary"
                               loading={assignSubmitting}
-                              disabled={assignSelected.length === 0}
+                              disabled={assignSelected.length === 0 || assignSelected.length > 200 || assignSubmitting || deleteSubmitting}
                               onClick={handleAssign}
                             >
                               确认分配（已选 {assignSelected.length} 个）
@@ -1082,13 +1061,13 @@ export default function ServerList() {
                 </Spin>
               ),
             },
-          ]}
+          ].filter(tab => tab.key === 'accounts' || selectedServerForAccounts?.role !== 'relay')}
         />
       </Modal>
 
       {/* Edit Server Modal */}
       <Modal
-        title={`编辑服务器 - ${editingServer?.name || ''}`}
+        title={`编辑节点 - ${editingServer?.name || ''}`}
         open={editModalVisible}
         onCancel={() => {
           setEditModalVisible(false)
@@ -1102,6 +1081,7 @@ export default function ServerList() {
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input autoComplete="off" />
           </Form.Item>
+          <Form.Item name="role" label="节点类型" initialValue="exit"><Select options={[{value:'exit',label:'落地节点（支持直连）'},{value:'relay',label:'中转节点'}]} /></Form.Item>
           <Form.Item name="ip" label="IP地址" rules={[{ required: true }]}>
             <Input autoComplete="off" />
           </Form.Item>
@@ -1110,6 +1090,9 @@ export default function ServerList() {
           </Form.Item>
           <Form.Item name="ssh_user" label="SSH用户" rules={[{ required: true }]}>
             <Input autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="ssh_jump_server_id" label="SSH 管理跳板" initialValue="" extra="只用于平台连接 SSH，不改变客户端节点地址。">
+            <Select options={[{value: '', label: '直接连接（默认）'}, ...servers.filter(s => s.id !== editingServer?.id && serverRole(s) === 'relay' && s.node && !s.ssh_jump_server_id).map(s => ({value: s.id, label: s.name}))]} />
           </Form.Item>
           <Form.Item name="ssh_key_type" label="认证方式" rules={[{ required: true }]}>
             <Select onChange={(v) => setEditSshKeyType(v)}>
@@ -1244,7 +1227,7 @@ export default function ServerList() {
   )
 }
 
-function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; value: number }[]; color: string; type?: 'percent' | 'bandwidth' }) {
+function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; value: number }[]; color: string; type?: 'value' | 'percent' | 'bandwidth' }) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   const formatHoverValue = (y: number) => {
@@ -1284,7 +1267,7 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
         customdata: data.map(p => formatHoverValue(p.value)),
       }
 
-      const layout = {
+      const layout: Partial<import('plotly.js-dist-min').Layout> = {
         margin: { t: 5, r: 5, b: 24, l: 38 },
         paper_bgcolor: 'transparent',
         plot_bgcolor: 'transparent',
@@ -1316,7 +1299,6 @@ function PlotlyLine({ data, color, type = 'value' }: { data: { time: string; val
         hoverlabel: {
           bgcolor: '#fff',
           bordercolor: color,
-          borderwidth: 1,
           font: { size: 11, color: '#6B6760' },
         },
       }

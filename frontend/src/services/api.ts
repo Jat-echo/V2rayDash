@@ -37,18 +37,72 @@ export const authAPI = {
 }
 
 export interface Server {
+	role: 'exit' | 'relay'
+	 node?: ManagedNode
   id: string
   name: string
   ip: string
+  country_code: string
   ssh_port: number
+  ssh_jump_server_id?: string
   ssh_user: string
+  ssh_key_type: string
   tags: string[]
   status: string
   created_at: string
   updated_at: string
 }
 
+export interface ManagedNode {
+  server_id: string
+  role: 'relay' | 'exit'
+  layout: 'relay' | 'exit' | 'legacy'
+  inbound_tag: string
+  short_id: string
+  egress_ip: string
+  state: 'adopted' | 'pending' | 'publishing' | 'active' | 'failed'
+  last_error: string
+  config_hash: string
+  updated_at: string
+}
+
+export interface CombinationRequest {
+  name: string
+  relay_server_id: string
+  exit_server_id: string
+}
+
+export interface RelayCombination extends CombinationRequest {
+  id: string
+  relay_server_name: string
+  exit_server_name: string
+  account_count: number
+  subscription_count: number
+  connection_ready: boolean
+  created_at: string
+}
+
+export interface BatchSubscriptionResult {
+  id?: string
+  name: string
+  status: 'created' | 'added' | 'removed' | 'skipped' | 'failed'
+  error?: string
+}
+
+export const relayAPI = {
+  list: () => api.get<RelayCombination[]>('/relay-combinations').then(r => r.data),
+  create: (data: CombinationRequest) => api.post<{id: string}>('/relay-combinations', data).then(r => r.data),
+  update: (id: string, data: CombinationRequest) => api.put(`/relay-combinations/${id}`, data),
+  delete: (id: string) => api.delete(`/relay-combinations/${id}`),
+  adopt: (id: string, layout: string) => api.post<ManagedNode>(`/servers/${id}/adopt`, { layout }, { timeout: 120000 }).then(r => r.data),
+  publish: (id: string) => api.post(`/servers/${id}/publish`).then(r => r.data),
+  monitor: (id: string) => api.post(`/servers/${id}/monitor`, {}, { timeout: 180000 }).then(r => r.data),
+}
+
 export interface Account {
+  combination_id?: string
+  combination_name?: string
+  transport: boolean
   id: string
   server_id: string
   uuid: string
@@ -64,10 +118,12 @@ export interface Account {
 export interface AccountWithServer extends Account {
   server_name: string
   server_ip: string
+  server_country_code: string
 }
 
 export interface AccountMapping {
-  server_id: string
+  server_id?: string
+  combination_id?: string
   account_id?: string
   auto_create?: boolean
 }
@@ -104,7 +160,7 @@ export const accountAPI = {
   subscribe: (id: string, type?: string) =>
     api.get(`/accounts/${id}/subscribe`, { params: { type } }).then(r => r.data),
   import: (serverId: string) =>
-    api.post<{ message: string; accounts: Account[] }>(`/servers/${serverId}/accounts/import`),
+    api.post<{ message: string; accounts: Account[] }>(`/servers/${serverId}/accounts/import`).then(r => r.data),
 }
 
 export interface MetricPoint {
@@ -174,6 +230,8 @@ export interface AccountTrafficSeries {
 }
 
 export const subscriptionAPI = {
+  batch: (data: {action?: 'add' | 'remove'; names?: string[]; subscription_ids?: string[]; server_id?: string; combination_id?: string; traffic_limit?: number; remark?: string}) =>
+    api.post<{results: BatchSubscriptionResult[]}>('/subscriptions/batch', data, {timeout: 120000}).then(r => r.data),
   list: (serverId?: string) => {
     const params = serverId ? { server_id: serverId } : {}
     return api.get<Subscription[]>('/subscriptions', { params }).then(r => r.data)
@@ -189,7 +247,7 @@ export const subscriptionAPI = {
   removeAccount: (id: string, accountId: string) =>
     api.delete(`/subscriptions/${id}/accounts/${accountId}`),
   updateAccountOrder: (id: string, order: { id: string; sort_order: number }[]) =>
-    api.put(`/subscriptions/${id}/accounts/order`, order),
+    api.put(`/subscriptions/${id}/accounts/order`, { order }),
   getAccounts: (id: string) =>
     api.get<AccountWithServer[]>(`/subscriptions/${id}/accounts`).then(r => r.data),
   getTrafficLogs: (id: string, range: string = '1d') =>

@@ -103,10 +103,8 @@ echo -e "后端运行路径: ${REMOTE_BACKEND_PATH}"
 # 构建前端
 echo -e "${YELLOW}[3/5] 构建前端...${NC}"
 cd "$PROJECT_DIR/frontend"
-if [[ ! -d "dist" ]]; then
-    echo -e "${YELLOW}执行 npm install && npm run build...${NC}"
-    npm install > /dev/null 2>&1
-fi
+npm ci --no-audit --no-fund
+npm test
 npm run build > /dev/null 2>&1
 echo -e "${GREEN}前端构建完成${NC}"
 

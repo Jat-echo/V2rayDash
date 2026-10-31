@@ -3,12 +3,15 @@ import { Table, Button, Space, Modal, Form, Input, Select, Switch, message, Card
 import type { SorterResult } from 'antd/es/table/interface'
 import { CopyOutlined, HolderOutlined, LinkOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ProfileOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { DndContext, closestCenter, DragEndEvent } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import QRCode from 'qrcode'
-import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, AccountTrafficSeries } from '../../services/api'
+import { subscriptionAPI, serverAPI, accountAPI, Subscription, Server, Account, AccountWithServer, AccountMapping, AccountTrafficSeries, RelayCombination, relayAPI } from '../../services/api'
 import { formatBytes } from '../../utils/format'
 import { FlagName } from '../../components/FlagName'
+import BatchSubscriptionDrawer from '../../components/BatchSubscriptionDrawer'
+import {apiError} from '../../components/NodeActions'
+import {combinationPath, serverRole} from '../../utils/node-targets'
 
 interface SubscriptionWithAccounts extends Subscription {
   accounts?: AccountWithServer[]
@@ -19,6 +22,8 @@ const AUTO_CREATE = '__auto_create__'
 export default function SubscriptionList() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionWithAccounts[]>([])
   const [servers, setServers] = useState<Server[]>([])
+  const [combinations, setCombinations] = useState<RelayCombination[]>([])
+  const [batchOpen, setBatchOpen] = useState(false)
   const [accounts, setAccounts] = useState<Record<string, Account[]>>({})
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
@@ -51,9 +56,10 @@ export default function SubscriptionList() {
   const loadData = useCallback(async () => {
     setLoading(true)
     try {
-      const [subs, srvs] = await Promise.all([
+      const [subs, srvs, paths] = await Promise.all([
         subscriptionAPI.listFull(),
         serverAPI.list(),
+        relayAPI.list(),
       ])
       setSubscriptions((subs || []).sort((a, b) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -68,6 +74,7 @@ export default function SubscriptionList() {
       }
       setAccounts(accountMap)
       setServers(srvs || [])
+      setCombinations(paths || [])
     } catch (e) {
       message.error(`加载失败：${(e as any)?.message || '请检查网络连接'}`)
       setSubscriptions([])
@@ -79,21 +86,13 @@ export default function SubscriptionList() {
 
   const handleAdd = async (values: any) => {
     if (selectedMappings.length === 0) {
-      message.error('请至少选择一个服务器')
+      message.error('请至少选择一个节点')
       return
     }
     try {
-      // 为标记为 auto-create 的服务器自动创建账号（使用订阅名称作为账号名）
-      const resolvedMappings = await Promise.all(
-        selectedMappings.map(async (m) => {
-          if (m.account_id !== AUTO_CREATE) return m
-          const newAcc = await accountAPI.create(m.server_id, {
-            email: values.name,
-            protocols: ['vless_reality_vision'],
-          })
-          return { server_id: m.server_id, account_id: newAcc.id }
-        })
-      )
+      // 为标记为 auto-create 的节点自动创建账号（使用订阅名称作为账号名）
+      const resolvedMappings = selectedMappings.map(mapping => mapping.account_id === AUTO_CREATE
+        ? {server_id: mapping.server_id, auto_create: true} : mapping)
       const newSub = await subscriptionAPI.create({
         name: values.name,
         remark: values.remark || '',
@@ -206,9 +205,7 @@ export default function SubscriptionList() {
   const handleServerSelect = (serverId: string, checked: boolean) => {
     if (checked) {
       if (selectedMappings.some(m => m.server_id === serverId)) return
-      // 默认自动创建账号
-      const accountId = AUTO_CREATE
-      setSelectedMappings([...selectedMappings, { server_id: serverId, account_id: accountId }])
+      setSelectedMappings([...selectedMappings, {server_id:serverId,account_id:AUTO_CREATE}])
     } else {
       setSelectedMappings(selectedMappings.filter(m => m.server_id !== serverId))
     }
@@ -253,12 +250,12 @@ export default function SubscriptionList() {
     }
   }
 
-  const onDragEnd = async (result: DragEndEvent) => {
-    if (!result.destination) return
-
-    const items = Array.from(managedAccounts)
-    const [reorderedItem] = items.splice(result.source.index, 1)
-    items.splice(result.destination.index, 0, reorderedItem)
+  const onDragEnd = async ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return
+    const oldIndex = managedAccounts.findIndex(account => account.id === active.id)
+    const newIndex = managedAccounts.findIndex(account => account.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    const items = arrayMove(managedAccounts, oldIndex, newIndex)
 
     const previousAccounts = managedAccounts
     setManagedAccounts(items)
@@ -281,6 +278,14 @@ export default function SubscriptionList() {
     } catch (e) {
       message.error('移除失败')
     }
+  }
+
+  const handleAddCombination = async (combinationID: string) => {
+    try {
+      await subscriptionAPI.addAccount(manageSubscriptionId, {combination_id:combinationID,auto_create:true})
+      setManagedAccounts(await subscriptionAPI.getAccounts(manageSubscriptionId))
+      setAddAccountModalVisible(false); message.success('中转节点已添加，发布配置后生效'); void loadData()
+    } catch (error) {message.error(apiError(error,'添加中转节点失败'))}
   }
 
   const handleAddAccount = async (serverId: string, accountId: string, autoCreate?: boolean) => {
@@ -321,7 +326,7 @@ export default function SubscriptionList() {
     },
     { title: 'UUID', dataIndex: 'uuid', render: (v: string) => v || '-' },
     {
-      title: '服务器/账号',
+      title: '节点/账号',
       render: (_: any, record: SubscriptionWithAccounts) => {
         if (!record.accounts || record.accounts.length === 0) {
           return <Tag color="default">暂无可用节点，请联系管理员</Tag>
@@ -330,7 +335,7 @@ export default function SubscriptionList() {
           <Space size={4} wrap>
             {record.accounts.map(acc => (
               <Tag key={acc.id} style={{ background: 'rgba(157,180,192,0.15)', color: '#3d6475', border: '1px solid rgba(157,180,192,0.4)', borderRadius: 6 }}>
-                <FlagName name={acc.server_name} countryCode={acc.server_country_code} /> / {acc.email}
+                <FlagName name={acc.combination_name ? `${acc.combination_name}（中转）` : `${acc.server_name}（直连）`} countryCode={acc.server_country_code} /> / {acc.email}
               </Tag>
             ))}
           </Space>
@@ -404,9 +409,9 @@ export default function SubscriptionList() {
       <div className="page-header-row">
         <div>
           <h1>订阅管理</h1>
-          <p>创建和管理用户的订阅链接，支持多服务器账号</p>
+          <p>创建和管理用户的订阅链接，支持多节点账号</p>
         </div>
-        <Button type="primary" className="page-action" onClick={openModal}>+ 添加订阅</Button>
+        <Space wrap><Button onClick={() => setBatchOpen(true)}>批量管理订阅</Button><Button type="primary" className="page-action" onClick={openModal}>+ 添加订阅</Button></Space>
       </div>
 
       {/* Stats Grid */}
@@ -483,62 +488,25 @@ export default function SubscriptionList() {
             <Input type="number" placeholder="留空表示无限流量" autoComplete="off" />
           </Form.Item>
 
-          <div style={{ marginBottom: 16 }}>
-            <h4>选择服务器（每个服务器选一个账号，无账号时自动以订阅名创建）</h4>
-            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
-              {servers.map(server => {
-                const serverAccounts = accounts[server.id] || []
-                const isSelected = selectedMappings.some(m => m.server_id === server.id)
-                const selectedMapping = selectedMappings.find(m => m.server_id === server.id)
-                const isAutoCreate = selectedMapping?.account_id === AUTO_CREATE
-
-                return (
-                  <div key={server.id} style={{
-                    border: '1px solid #d9d9d9',
-                    borderRadius: 4,
-                    padding: 12,
-                    marginBottom: 8,
-                    backgroundColor: isSelected ? '#f0f5ff' : 'white'
-                  }}>
-                    <Checkbox
-                      checked={isSelected}
-                      onChange={(e) => handleServerSelect(server.id, e.target.checked)}
-                      style={{ marginBottom: isSelected ? 8 : 0 }}
-                    >
-                      <strong><FlagName name={server.name} countryCode={server.country_code} /></strong> ({server.ip})
-                    </Checkbox>
-
-                    {isSelected && (
-                      <div style={{ marginLeft: 24 }}>
-                        <Select
-                          value={selectedMapping?.account_id}
-                          onChange={(v) => handleAccountChange(server.id, v)}
-                          style={{ width: '100%' }}
-                        >
-                          <Select.Option value={AUTO_CREATE}>
-                            <span style={{ color: '#1677ff' }}>+ 自动创建账号（使用订阅名称）</span>
-                          </Select.Option>
-                          {serverAccounts.map(acc => (
-                            <Select.Option key={acc.id} value={acc.id}>
-                              {acc.email} {acc.enabled ? '' : '(已禁用)'}
-                            </Select.Option>
-                          ))}
-                        </Select>
-                        {isAutoCreate && (
-                          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text-secondary)' }}>
-                            将自动创建名为「订阅名称」的 VLESS Reality 账号
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
+          <div style={{marginBottom:24}}>
+            <h4>直连节点</h4>
+            <div style={{maxHeight:240,overflowY:'auto'}}>
+              {servers.filter(server => serverRole(server)==='exit').map(server => {
+                const serverAccounts=(accounts[server.id] || []).filter(account => !account.transport && !account.combination_id)
+                const mapping=selectedMappings.find(value => value.server_id===server.id && !value.combination_id)
+                return <div key={server.id} style={{padding:12,marginBottom:8,border:'1px solid var(--border-color)',borderRadius:6,background:mapping ? 'var(--bg-secondary)' : 'var(--bg-card)'}}>
+                  <Checkbox checked={!!mapping} onChange={event => handleServerSelect(server.id,event.target.checked)}><strong><FlagName name={server.name} countryCode={server.country_code}/></strong> · {server.ip}</Checkbox>
+                  {mapping && <Select aria-label={`${server.name} 的直连账号`} style={{width:'100%',marginTop:10}} value={mapping.account_id} onChange={value => handleAccountChange(server.id,value)} options={[{value:AUTO_CREATE,label:'自动创建账号（使用订阅名称）'},...serverAccounts.map(account => ({value:account.id,label:`${account.email}${account.enabled ? '' : '（已停用）'}`}))]} />}
+                </div>
               })}
             </div>
+            <h4 style={{marginTop:20}}>代理链路</h4>
+            <p className="node-help">选择已手动创建的链路，将为此用户自动分配独立账号。可与上面的直连节点同时添加。</p>
+            {combinations.length ? <Checkbox.Group style={{display:'flex',flexDirection:'column',gap:12}} value={selectedMappings.filter(mapping => mapping.combination_id).map(mapping => mapping.combination_id!)} onChange={values => setSelectedMappings([...selectedMappings.filter(mapping => !mapping.combination_id),...values.map(value => ({combination_id:String(value),auto_create:true}))])} options={combinations.map(item => ({value:item.id,label:<span>{item.name}<span className="node-help" style={{marginLeft:8}}>{item.name===combinationPath(item) ? '' : combinationPath(item)}</span></span>}))} /> : <p className="node-help">还没有链路，请先到“代理链路”手动创建。</p>}
           </div>
 
           <Button type="primary" htmlType="submit" disabled={selectedMappings.length === 0}>
-            提交 ({selectedMappings.length} 个服务器)
+            提交 ({selectedMappings.length} 个节点)
           </Button>
         </Form>
       </Modal>
@@ -610,7 +578,7 @@ export default function SubscriptionList() {
           {/* 账号管理 */}
           <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'flex-end' }}>
             <Button type="primary" size="small" onClick={() => setAddAccountModalVisible(true)}>
-              添加账号
+              添加节点
             </Button>
           </div>
 
@@ -653,7 +621,7 @@ export default function SubscriptionList() {
             <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
               {orphanedAccounts.map(a => (
                 <div key={a.id} style={{ padding: '4px 0', fontSize: 13 }}>
-                  <Tag style={{ marginRight: 6, background: 'rgba(157,180,192,0.15)', color: '#3d6475', border: '1px solid rgba(157,180,192,0.4)', borderRadius: 6 }}><FlagName name={a.server_name} countryCode={a.server_country_code} /></Tag>
+                  <Tag style={{ marginRight: 6, background: 'rgba(157,180,192,0.15)', color: '#3d6475', border: '1px solid rgba(157,180,192,0.4)', borderRadius: 6 }}><FlagName name={a.combination_name ? `${a.combination_name}（中转）` : `${a.server_name}（直连）`} countryCode={a.server_country_code} /></Tag>
                   {a.email}
                 </div>
               ))}
@@ -670,17 +638,17 @@ export default function SubscriptionList() {
 
       {/* Add Account Modal */}
       <Modal
-        title="添加账号"
+        title="添加节点"
         open={addAccountModalVisible}
         onCancel={() => setAddAccountModalVisible(false)}
         footer={null}
         width={500}
       >
         <div style={{ marginTop: 16, maxHeight: 400, overflowY: 'auto' }}>
-          {servers.map(server => {
-            const serverAccounts = accounts[server.id] || []
+          {servers.filter(server => serverRole(server)==='exit').map(server => {
+            const serverAccounts = (accounts[server.id] || []).filter(account => !account.transport && !account.combination_id)
             const linkedAccountIds = managedAccounts.map(a => a.id)
-            const hasLinkedAccountFromServer = managedAccounts.some(a => a.server_id === server.id)
+            const hasLinkedAccountFromServer = managedAccounts.some(a => a.server_id === server.id && !a.combination_id)
             const availableAccounts = hasLinkedAccountFromServer ? [] : serverAccounts.filter(acc => !linkedAccountIds.includes(acc.id))
             const hasAutoNameAccount = serverAccounts.some(acc => acc.email === manageSubscriptionName)
 
@@ -693,9 +661,10 @@ export default function SubscriptionList() {
               }}>
                 <strong><FlagName name={server.name} /></strong> ({server.ip})
                 {hasLinkedAccountFromServer ? (
-                  <div style={{ marginTop: 8, color: 'var(--text-secondary)' }}>已添加此服务器的账号</div>
+                  <div style={{ marginTop: 8, color: 'var(--text-secondary)' }}>已添加此节点的账号</div>
                 ) : (
                   <div style={{ marginTop: 8 }}>
+                    {server.node?.role !== 'relay' && <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ color: '#1677ff', fontSize: 13 }}>
                         {hasAutoNameAccount ? `使用同名账号「${manageSubscriptionName}」` : `自动创建账号「${manageSubscriptionName}」`}
@@ -704,6 +673,7 @@ export default function SubscriptionList() {
                         {hasAutoNameAccount ? '关联' : '创建并关联'}
                       </Button>
                     </div>
+                    </>}
                     {availableAccounts.length > 0 && (
                       <div style={{ borderTop: '1px dashed #f0f0f0', paddingTop: 6, marginTop: 6 }}>
                         {availableAccounts.map(acc => (
@@ -721,8 +691,15 @@ export default function SubscriptionList() {
               </div>
             )
           })}
+          <h4 style={{marginTop:20}}>代理链路</h4>
+          {combinations.map(item => {
+            const linked=managedAccounts.some(account => account.combination_id===item.id)
+            return <div key={item.id} style={{padding:'12px 0',borderBottom:'1px solid var(--border-color)',display:'flex',justifyContent:'space-between',gap:12,alignItems:'center'}}><div><strong>{item.name}</strong><div className="node-help">{combinationPath(item)}</div></div><Button disabled={linked} onClick={() => void handleAddCombination(item.id)}>{linked ? '已添加' : '添加节点'}</Button></div>
+          })}
+          {!combinations.length && <p className="node-help">请先在“代理链路”页面手动创建链路。</p>}
         </div>
       </Modal>
+      <BatchSubscriptionDrawer open={batchOpen} onClose={() => setBatchOpen(false)} onChange={() => void loadData()} />
     </div>
   )
 }
@@ -1049,7 +1026,7 @@ function SortableItem({ id, account, onRemove }: { id: string; account: AccountW
           <HolderOutlined />
         </div>
         <div>
-          <div style={{ fontWeight: 'bold' }}><FlagName name={account.server_name} countryCode={account.server_country_code} /> / {account.email}</div>
+          <div style={{ fontWeight: 'bold' }}><FlagName name={account.combination_name ? `${account.combination_name}（中转）` : `${account.server_name}（直连）`} countryCode={account.server_country_code} /> / {account.email}</div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>ID: {account.id.substring(0, 8)}...</div>
         </div>
       </div>

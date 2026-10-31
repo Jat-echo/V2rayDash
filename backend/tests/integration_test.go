@@ -1,478 +1,143 @@
 package tests
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
+	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
+	"v2ray-dash/backend/internal/config"
+	"v2ray-dash/backend/internal/handler"
 	"v2ray-dash/backend/internal/model"
+	"v2ray-dash/backend/pkg/database"
 )
 
-var (
-	testRouter *gin.Engine
-)
-
-// TestMain 初始化测试环境
-func TestMain(m *testing.M) {
+func newRouter(db *database.DB) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-
-	// 初始化路由
-	testRouter = gin.New()
-	setupRoutes(testRouter)
-
-	// 运行测试
-	code := m.Run()
-
-	os.Exit(code)
+	r := gin.New()
+	handler.SetupRoutes(r, db, &config.Config{})
+	return r
 }
 
-func setupRoutes(r *gin.Engine) {
-	api := r.Group("/api")
-	{
-		// 服务器
-		serverHandler := newServerHandler()
-		api.GET("/servers", serverHandler.list)
-		api.POST("/servers", serverHandler.create)
-		api.GET("/servers/:id", serverHandler.get)
-		api.DELETE("/servers/:id", serverHandler.delete)
-
-		// 订阅管理
-		subHandler := newSubscriptionHandler()
-		api.GET("/subscriptions", subHandler.list)
-		api.POST("/subscriptions", subHandler.create)
-		api.GET("/subscriptions/:id", subHandler.get)
-		api.DELETE("/subscriptions/:id", subHandler.delete)
-		api.GET("/subscriptions/:id/link", subHandler.getLink)
-
-		// 公开订阅
-		r.GET("/api/subscribe/:uuid", subHandler.serveSubscription)
-
-		// Agent
-		agentHandler := newAgentHandler()
-		api.POST("/agent/heartbeat", agentHandler.heartbeat)
-
-		// 日志
-		logHandler := newLogHandler()
-		api.GET("/logs/operation", logHandler.listOperationLogs)
-		api.GET("/logs/node-status", logHandler.listNodeStatuses)
-
-		// 模板
-		templateHandler := newTemplateHandler()
-		api.GET("/templates", templateHandler.list)
-		api.POST("/templates", templateHandler.create)
-		api.DELETE("/templates/:id", templateHandler.delete)
-	}
-}
-
-// ============ 服务器测试辅助函数 ============
-
-type testServerHandler struct{}
-
-func newServerHandler() *testServerHandler {
-	return &testServerHandler{}
-}
-
-func (h *testServerHandler) list(c *gin.Context) {
-	c.JSON(http.StatusOK, []*model.Server{})
-}
-
-func (h *testServerHandler) create(c *gin.Context) {
-	var req model.CreateServerRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	server := &model.Server{
-		ID:     "test-server-id",
-		Name:   req.Name,
-		IP:     req.IP,
-		Status: "online",
-	}
-	c.JSON(http.StatusCreated, server)
-}
-
-func (h *testServerHandler) get(c *gin.Context) {
-	c.JSON(http.StatusOK, &model.Server{ID: c.Param("id"), Name: "Test"})
-}
-
-func (h *testServerHandler) delete(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
-}
-
-// ============ 订阅测试辅助函数 ============
-
-type testSubscriptionHandler struct{}
-
-func newSubscriptionHandler() *testSubscriptionHandler {
-	return &testSubscriptionHandler{}
-}
-
-func (h *testSubscriptionHandler) list(c *gin.Context) {
-	c.JSON(http.StatusOK, []*model.Subscription{})
-}
-
-func (h *testSubscriptionHandler) create(c *gin.Context) {
-	sub := &model.Subscription{
-		ID:   "test-sub-id",
-		UUID: "test-uuid-1234",
-		Name: "Test Subscription",
-	}
-	c.JSON(http.StatusCreated, sub)
-}
-
-func (h *testSubscriptionHandler) get(c *gin.Context) {
-	c.JSON(http.StatusOK, &model.Subscription{ID: c.Param("id")})
-}
-
-func (h *testSubscriptionHandler) delete(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
-}
-
-func (h *testSubscriptionHandler) getLink(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"link":    "http://localhost:8080/api/subscribe/test-uuid",
-		"encoded": "aHR0cDovL2xvY2FsaG9zdDo4MDgwL2FwaS9zdWJzY3JpYmUvdGVzdC11dWlk",
-	})
-}
-
-func (h *testSubscriptionHandler) serveSubscription(c *gin.Context) {
-	c.String(http.StatusOK, "vless://test-uuid@10.0.0.1:443")
-}
-
-// ============ Agent 测试辅助函数 ============
-
-type testAgentHandler struct{}
-
-func newAgentHandler() *testAgentHandler {
-	return &testAgentHandler{}
-}
-
-func (h *testAgentHandler) heartbeat(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}
-
-// ============ 日志测试辅助函数 ============
-
-type testLogHandler struct{}
-
-func newLogHandler() *testLogHandler {
-	return &testLogHandler{}
-}
-
-func (h *testLogHandler) listOperationLogs(c *gin.Context) {
-	c.JSON(http.StatusOK, []*model.OperationLog{})
-}
-
-func (h *testLogHandler) listNodeStatuses(c *gin.Context) {
-	c.JSON(http.StatusOK, []*model.NodeStatus{})
-}
-
-// ============ 模板测试辅助函数 ============
-
-type testTemplateHandler struct{}
-
-func newTemplateHandler() *testTemplateHandler {
-	return &testTemplateHandler{}
-}
-
-func (h *testTemplateHandler) list(c *gin.Context) {
-	c.JSON(http.StatusOK, []*model.Template{})
-}
-
-func (h *testTemplateHandler) create(c *gin.Context) {
-	tmpl := &model.Template{
-		ID:   1,
-		Name: "Test Template",
-		Config: model.TemplateConfig{
-			Core: "xray-core",
-		},
-	}
-	c.JSON(http.StatusCreated, tmpl)
-}
-
-func (h *testTemplateHandler) delete(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
-}
-
-// ============ 测试用例 ============
-
-func TestServerAPI(t *testing.T) {
-	t.Run("CreateServer", func(t *testing.T) {
-		reqBody := map[string]interface{}{
-			"name": "Test Server",
-			"ip":   "192.168.1.100",
-		}
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/servers", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-
-		var server model.Server
-		json.Unmarshal(w.Body.Bytes(), &server)
-		assert.Equal(t, "Test Server", server.Name)
-		t.Logf("PASS: Server created - %s", server.Name)
-	})
-
-	t.Run("ListServers", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/servers", nil)
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		t.Log("PASS: Server list OK")
-	})
-}
-
-func TestSubscriptionAPI(t *testing.T) {
-	t.Run("CreateSubscription", func(t *testing.T) {
-		reqBody := map[string]interface{}{
-			"server_id": "test-server",
-			"name":      "Test Sub",
-		}
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/subscriptions", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-		t.Log("PASS: Subscription created")
-	})
-
-	t.Run("GetSubscriptionLink", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/subscriptions/test-id/link", nil)
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp map[string]string
-		json.Unmarshal(w.Body.Bytes(), &resp)
-		assert.NotEmpty(t, resp["link"])
-		assert.NotEmpty(t, resp["encoded"])
-		t.Logf("PASS: Subscription link - %s", resp["link"])
-	})
-}
-
-func TestAgentAPI(t *testing.T) {
-	t.Run("Heartbeat", func(t *testing.T) {
-		reqBody := map[string]interface{}{
-			"server_id":    "test-server",
-			"cpu_percent":  45.5,
-			"mem_percent": 62.3,
-			"disk_percent": 55.0,
-			"v2ray_status": "running",
-		}
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/agent/heartbeat", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		t.Log("PASS: Heartbeat sent")
-	})
-}
-
-func TestPublicSubscription(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/api/subscribe/test-uuid-1234", nil)
-	w := httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Body.String(), "vless://")
-	t.Log("PASS: Public subscription OK")
-}
-
-func TestLogAPI(t *testing.T) {
-	t.Run("OperationLogs", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/logs/operation", nil)
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		t.Log("PASS: Operation logs OK")
-	})
-
-	t.Run("NodeStatus", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/logs/node-status", nil)
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		t.Log("PASS: Node status OK")
-	})
-}
-
-func TestTemplateAPI(t *testing.T) {
-	t.Run("CreateTemplate", func(t *testing.T) {
-		reqBody := map[string]interface{}{
-			"name":        "Test Template",
-			"description": "Test",
-			"config": model.TemplateConfig{
-				Core:      "xray-core",
-				Port:      443,
-				Protocols: []string{"vless_reality_vision"},
-			},
-		}
-		body, _ := json.Marshal(reqBody)
-		req, _ := http.NewRequest("POST", "/api/templates", bytes.NewBuffer(body))
-		req.Header.Set("Content-Type", "application/json")
-
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusCreated, w.Code)
-		t.Log("PASS: Template created")
-	})
-
-	t.Run("ListTemplates", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "/api/templates", nil)
-		w := httptest.NewRecorder()
-		testRouter.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		t.Log("PASS: Template list OK")
-	})
-}
-
-// ============ 完整流程测试 ============
-
-func TestFullWorkflow(t *testing.T) {
-	fmt.Println("\n========================================")
-	fmt.Println("V2rayDash 完整流程测试")
-	fmt.Println("========================================")
-
-	// 1. 创建服务器
-	fmt.Println("[1/10] 创建服务器...")
-	reqBody, _ := json.Marshal(map[string]interface{}{
-		"name": "Workflow Server",
-		"ip":   "10.0.0.250",
-	})
-	req, _ := http.NewRequest("POST", "/api/servers", bytes.NewBuffer(reqBody))
+func request(t *testing.T, r http.Handler, method, path, body, token string, want int) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	w := httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusCreated, w.Code)
+	r.ServeHTTP(w, req)
+	require.Equal(t, want, w.Code, "%s %s: %s", method, path, w.Body.String())
+	return w
+}
+
+// Exercise production route registration, middleware and validation without a database.
+func TestRoutes(t *testing.T) {
+	r := newRouter(&database.DB{})
+	w := request(t, r, "GET", "/health", "", "", http.StatusOK)
+	require.JSONEq(t, `{"status":"ok"}`, w.Body.String())
+	for _, path := range []string{"/api/servers", "/api/subscriptions", "/api/subscriptions/full", "/api/settings/public-url", "/api/logs/node-status"} {
+		request(t, r, "GET", path, "", "", http.StatusUnauthorized)
+	}
+	request(t, r, "POST", "/api/servers/ping", "{}", "", http.StatusUnauthorized)
+	request(t, r, "POST", "/api/auth/login", "{}", "", http.StatusBadRequest)
+	request(t, r, "POST", "/api/agent/heartbeat", "{}", "", http.StatusBadRequest)
+}
+
+func TestAgentDownloadUsesConfiguredArtifact(t *testing.T) {
+	artifact := filepath.Join(t.TempDir(), "linux-amd64-agent")
+	require.NoError(t, os.WriteFile(artifact, []byte("test-agent-artifact"), 0600))
+	t.Setenv("AGENT_BINARY_PATH", artifact)
+	r := newRouter(&database.DB{})
+	for _, path := range []string{"linux/amd64", "linux/x86_64", "linux_amd64", "linux_x86_64"} {
+		w := request(t, r, "GET", "/agents/latest/"+path+"/agent", "", "", 200)
+		require.Equal(t, "test-agent-artifact", w.Body.String())
+	}
+	request(t, r, "GET", "/agents/latest/linux_arm64/agent", "", "", 404)
+	request(t, r, "GET", "/agents/latest/windows/amd64/agent", "", "", 404)
+}
+
+// Use an isolated schema; never reset or delete existing application tables.
+func TestDatabaseWorkflow(t *testing.T) {
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("set TEST_DATABASE_URL to a PostgreSQL test database to run the real workflow")
+	}
+	db, err := database.NewPostgres(databaseURL)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	db.SetMaxOpenConns(1)
+	schema := pq.QuoteIdentifier("test_" + strings.ReplaceAll(uuid.NewString(), "-", ""))
+	_, err = db.Exec("CREATE SCHEMA " + schema)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := db.Exec("DROP SCHEMA " + schema + " CASCADE")
+		require.NoError(t, err)
+	})
+	_, err = db.Exec("SET search_path TO " + schema)
+	require.NoError(t, err)
+	require.NoError(t, database.InitSchema(db))
+	// Startup migrations must be safe to run again.
+	require.NoError(t, database.InitSchema(db))
+	r := newRouter(db)
+
+	w := request(t, r, "GET", "/api/auth/status", "", "", http.StatusOK)
+	require.JSONEq(t, `{"setup_required":true}`, w.Body.String())
+	w = request(t, r, "POST", "/api/auth/setup", `{"username":"test-admin","password":"test-password"}`, "", http.StatusOK)
+	var auth struct{ Token string }
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &auth))
+	require.NotEmpty(t, auth.Token)
+	request(t, r, "POST", "/api/auth/setup", `{}`, "", http.StatusForbidden)
+	request(t, r, "POST", "/api/auth/login", `{"username":"test-admin","password":"wrong-password"}`, "", http.StatusUnauthorized)
+
+	w = request(t, r, "POST", "/api/servers", `{"name":"test-node","ip":"127.0.0.1","country_code":"US","ssh_port":22,"ssh_user":"root"}`, auth.Token, http.StatusCreated)
 	var server model.Server
-	json.Unmarshal(w.Body.Bytes(), &server)
-	fmt.Printf("   ✓ 服务器创建成功: %s\n", server.Name)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &server))
+	require.NotEmpty(t, server.ID)
+	w = request(t, r, "GET", "/api/servers", "", auth.Token, http.StatusOK)
+	var servers []model.Server
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &servers))
+	require.Len(t, servers, 1)
+	require.Equal(t, server.ID, servers[0].ID)
+	request(t, r, "PUT", "/api/servers/"+server.ID, `{"name":"renamed-node"}`, auth.Token, http.StatusOK)
 
-	// 2. 创建模板
-	fmt.Println("[2/10] 创建模板...")
-	templateBody, _ := json.Marshal(map[string]interface{}{
-		"name":        "Workflow Template",
-		"description": "Test",
-		"config": model.TemplateConfig{
-			Core:      "xray-core",
-			Port:      443,
-			Protocols: []string{"vless_reality_vision"},
-		},
-	})
-	req, _ = http.NewRequest("POST", "/api/templates", bytes.NewBuffer(templateBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusCreated, w.Code)
-	var template model.Template
-	json.Unmarshal(w.Body.Bytes(), &template)
-	fmt.Printf("   ✓ 模板创建成功: %s\n", template.Name)
+	// Seed one account directly: this workflow must never initiate an SSH install/sync.
+	var accountID string
+	err = db.QueryRow(`INSERT INTO accounts (server_id, uuid, email, protocols) VALUES ($1, $2, 'test@example.com', ARRAY['vless_tcp']) RETURNING id`, server.ID, uuid.NewString()).Scan(&accountID)
+	require.NoError(t, err)
+	body := `{"name":"test-subscription","remark":"integration","account_mappings":[{"server_id":"` + server.ID + `","account_id":"` + accountID + `"}]}`
+	w = request(t, r, "POST", "/api/subscriptions", body, auth.Token, http.StatusCreated)
+	var sub model.SubscriptionWithAccounts
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &sub))
+	require.NotEmpty(t, sub.ID)
+	require.Equal(t, "integration", sub.Remark)
+	require.Len(t, sub.Accounts, 1)
+	request(t, r, "PUT", "/api/subscriptions/"+sub.ID+"/accounts/order", `{"order":[{"id":"`+accountID+`","sort_order":2}]}`, auth.Token, http.StatusOK)
+	var sortOrder int
+	require.NoError(t, db.QueryRow(`SELECT sort_order FROM subscription_accounts WHERE subscription_id = $1 AND account_id = $2`, sub.ID, accountID).Scan(&sortOrder))
+	require.Equal(t, 2, sortOrder)
+	request(t, r, "GET", "/api/subscriptions/full", "", auth.Token, http.StatusOK)
+	w = request(t, r, "GET", "/api/subscriptions/"+sub.ID+"/link", "", auth.Token, http.StatusOK)
+	require.Contains(t, w.Body.String(), "/api/subscribe/"+sub.UUID)
+	request(t, r, "GET", "/api/subscribe/"+sub.UUID, "", "", http.StatusOK)
 
-	// 3. 创建订阅
-	fmt.Println("[3/10] 创建订阅...")
-	subBody, _ := json.Marshal(map[string]interface{}{
-		"server_id": server.ID,
-		"name":      "Workflow Sub",
-	})
-	req, _ = http.NewRequest("POST", "/api/subscriptions", bytes.NewBuffer(subBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusCreated, w.Code)
-	var sub model.Subscription
-	json.Unmarshal(w.Body.Bytes(), &sub)
-	fmt.Printf("   ✓ 订阅创建成功: %s\n", sub.Name)
-
-	// 4. 获取订阅链接
-	fmt.Println("[4/10] 获取订阅链接...")
-	req, _ = http.NewRequest("GET", fmt.Sprintf("/api/subscriptions/%s/link", sub.ID), nil)
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	var linkResp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &linkResp)
-	fmt.Printf("   ✓ 订阅链接: %s\n", linkResp["link"])
-
-	// 5. 测试公开订阅
-	fmt.Println("[5/10] 测试公开订阅...")
-	req, _ = http.NewRequest("GET", fmt.Sprintf("/api/subscribe/%s", sub.UUID), nil)
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	fmt.Printf("   ✓ 公开订阅内容: %s\n", w.Body.String())
-
-	// 6. 发送心跳
-	fmt.Println("[6/10] 发送心跳...")
-	heartbeatBody, _ := json.Marshal(map[string]interface{}{
-		"server_id":    server.ID,
-		"cpu_percent":  30.0,
-		"mem_percent":  45.0,
-		"disk_percent": 50.0,
-		"v2ray_status": "running",
-	})
-	req, _ = http.NewRequest("POST", "/api/agent/heartbeat", bytes.NewBuffer(heartbeatBody))
-	req.Header.Set("Content-Type", "application/json")
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	fmt.Println("   ✓ 心跳发送成功")
-
-	// 7. 检查操作日志
-	fmt.Println("[7/10] 检查操作日志...")
-	req, _ = http.NewRequest("GET", "/api/logs/operation", nil)
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	fmt.Println("   ✓ 操作日志获取成功")
-
-	// 8. 检查节点状态
-	fmt.Println("[8/10] 检查节点状态...")
-	req, _ = http.NewRequest("GET", "/api/logs/node-status", nil)
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	fmt.Println("   ✓ 节点状态获取成功")
-
-	// 9. 删除订阅
-	fmt.Println("[9/10] 删除订阅...")
-	req, _ = http.NewRequest("DELETE", fmt.Sprintf("/api/subscriptions/%s", sub.ID), nil)
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	fmt.Println("   ✓ 订阅删除成功")
-
-	// 10. 删除服务器
-	fmt.Println("[10/10] 删除服务器...")
-	req, _ = http.NewRequest("DELETE", fmt.Sprintf("/api/servers/%s", server.ID), nil)
-	w = httptest.NewRecorder()
-	testRouter.ServeHTTP(w, req)
-	require.Equal(t, http.StatusOK, w.Code)
-	fmt.Println("   ✓ 服务器删除成功")
-
-	fmt.Println("\n========================================")
-	fmt.Println("✓ 所有流程测试通过!")
-	fmt.Println("========================================")
+	body = `{"server_id":"` + server.ID + `","cpu_percent":25,"memory_percent":50,"user_traffic_stats":[{"email":"test@example.com","upload":100,"download":200}]}`
+	request(t, r, "POST", "/api/agent/heartbeat", body, "", http.StatusOK)
+	var used int64
+	require.NoError(t, db.QueryRow(`SELECT traffic_used FROM subscriptions WHERE id = $1`, sub.ID).Scan(&used))
+	require.EqualValues(t, 300, used)
+	request(t, r, "GET", "/api/subscriptions/"+sub.ID+"/accounts/traffic", "", auth.Token, http.StatusOK)
+	request(t, r, "GET", "/api/logs/node-status?server_id="+server.ID, "", auth.Token, http.StatusOK)
+	request(t, r, "DELETE", "/api/subscriptions/"+sub.ID, "", auth.Token, http.StatusOK)
+	request(t, r, "DELETE", "/api/servers/"+server.ID, "", auth.Token, http.StatusOK)
+	request(t, r, "POST", "/api/auth/logout", "{}", auth.Token, http.StatusOK)
+	request(t, r, "GET", "/api/servers", "", auth.Token, http.StatusUnauthorized)
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"path/filepath"
 	"time"
 
 	"v2ray-dash/agent/internal/collector"
@@ -23,19 +24,32 @@ func main() {
 
 	reporterClient := reporter.New(cfg.ControlCenterURL, cfg.ServerID, cfg.PSK)
 	col := collector.New()
+	col.Service = cfg.CoreService
+	col.Cumulative = cfg.CoreService != ""
+	statePath := cfg.StatePath
+	if statePath == "" {
+		statePath = filepath.Join(filepath.Dir(*configPath), "pending-heartbeats.json")
+	}
+	var queue *reporter.Queue
+	if col.Cumulative {
+		queue, err = reporter.OpenQueue(statePath)
+		if err != nil {
+			log.Fatalf("Failed to load pending heartbeats: %v", err)
+		}
+	}
 
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	// 立即执行一次
-	reportStatus(cfg.ServerID, reporterClient, col)
+	reportStatus(cfg.ServerID, reporterClient, col, queue)
 
 	for range ticker.C {
-		reportStatus(cfg.ServerID, reporterClient, col)
+		reportStatus(cfg.ServerID, reporterClient, col, queue)
 	}
 }
 
-func reportStatus(serverID string, client *reporter.Client, col *collector.Collector) {
+func reportStatus(serverID string, client *reporter.Client, col *collector.Collector, queue *reporter.Queue) {
 	status, err := col.Collect()
 	if err != nil {
 		log.Printf("Collect error: %v", err)
@@ -43,8 +57,18 @@ func reportStatus(serverID string, client *reporter.Client, col *collector.Colle
 	}
 
 	status.ServerID = serverID
+	if queue == nil {
+		if err := client.ReportStatus(status); err != nil {
+			log.Printf("Report error: %v", err)
+		}
+		return
+	}
 
-	if err := client.ReportStatus(status); err != nil {
+	if err := queue.Enqueue(status); err != nil {
+		log.Printf("Persist heartbeat error: %v", err)
+		return
+	}
+	if err := queue.Flush(client.ReportStatus); err != nil {
 		log.Printf("Report error: %v", err)
 	}
 }

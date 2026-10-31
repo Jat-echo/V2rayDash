@@ -22,7 +22,7 @@ func (r *SubscriptionAccountRepository) AddAccount(subscriptionID, accountID str
 		SELECT COUNT(*)
 		FROM subscription_accounts sa
 		JOIN accounts a ON sa.account_id = a.id
-		WHERE sa.subscription_id = $1 AND a.server_id = (
+		WHERE sa.subscription_id = $1 AND NOT EXISTS (SELECT 1 FROM managed_nodes mn WHERE mn.server_id=a.server_id AND mn.role='relay') AND a.server_id = (
 			SELECT server_id FROM accounts WHERE id = $2
 		)
 	`, subscriptionID, accountID).Scan(&existingCount)
@@ -41,21 +41,46 @@ func (r *SubscriptionAccountRepository) AddAccount(subscriptionID, accountID str
 }
 
 func (r *SubscriptionAccountRepository) RemoveAccount(subscriptionID, accountID string) error {
-	_, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var locked, serverID string
+	if err = tx.QueryRow(`SELECT id FROM subscriptions WHERE id=$1 FOR UPDATE`, subscriptionID).Scan(&locked); err != nil {
+		return err
+	}
+	err = tx.QueryRow(`SELECT a.server_id FROM accounts a JOIN subscription_accounts sa ON sa.account_id=a.id WHERE sa.subscription_id=$1 AND a.id=$2`, subscriptionID, accountID).Scan(&serverID)
+	if err == sql.ErrNoRows {
+		return tx.Commit()
+	}
+	if err != nil {
+		return err
+	}
+	if err = lockManagedNodes(tx, []string{serverID}); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`
 		DELETE FROM subscription_accounts
 		WHERE subscription_id = $1 AND account_id = $2
 	`, subscriptionID, accountID)
-	return err
+	if err != nil {
+		return err
+	}
+	if err = markNodesPending(tx, []string{serverID}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *SubscriptionAccountRepository) ListBySubscriptionID(subscriptionID string) ([]*model.Account, error) {
 	rows, err := r.db.Query(`
 		SELECT a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
-		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at
+		       a.traffic_limit, a.traffic_used, a.transport, a.created_at, a.updated_at, COALESCE(a.combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=a.combination_id),'')
 		FROM accounts a
 		JOIN subscription_accounts sa ON a.id = sa.account_id
 		WHERE sa.subscription_id = $1
-		ORDER BY a.created_at DESC
+		ORDER BY sa.sort_order ASC, a.created_at DESC, a.id
 	`, subscriptionID)
 	if err != nil {
 		return nil, err
@@ -67,7 +92,7 @@ func (r *SubscriptionAccountRepository) ListBySubscriptionID(subscriptionID stri
 		var a model.Account
 		var protocols pq.StringArray
 		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols,
-			&a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			&a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.Transport, &a.CreatedAt, &a.UpdatedAt, &a.CombinationID, &a.CombinationName); err != nil {
 			return nil, err
 		}
 		a.Protocols = protocols
@@ -85,7 +110,7 @@ func (r *SubscriptionAccountRepository) ListBySubscriptionID(subscriptionID stri
 func (r *SubscriptionAccountRepository) GetBySubscriptionOrdered(subscriptionID string) ([]*model.AccountWithServerInfo, error) {
 	rows, err := r.db.Query(`
 		SELECT a.id, a.server_id, a.uuid, a.email, a.protocols, a.enabled,
-		       a.traffic_limit, a.traffic_used, a.created_at, a.updated_at,
+		       a.traffic_limit, a.traffic_used, a.transport, a.created_at, a.updated_at, COALESCE(a.combination_id::text,''), COALESCE((SELECT c.name FROM relay_combinations c WHERE c.id=a.combination_id),''),
 		       s.name as server_name, s.ip as server_ip, s.country_code as server_country_code
 		FROM accounts a
 		JOIN subscription_accounts sa ON a.id = sa.account_id
@@ -103,7 +128,7 @@ func (r *SubscriptionAccountRepository) GetBySubscriptionOrdered(subscriptionID 
 		var a model.AccountWithServerInfo
 		var protocols pq.StringArray
 		if err := rows.Scan(&a.ID, &a.ServerID, &a.UUID, &a.Email, &protocols,
-			&a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.CreatedAt, &a.UpdatedAt,
+			&a.Enabled, &a.TrafficLimit, &a.TrafficUsed, &a.Transport, &a.CreatedAt, &a.UpdatedAt, &a.CombinationID, &a.CombinationName,
 			&a.ServerName, &a.ServerIP, &a.ServerCountryCode); err != nil {
 			return nil, err
 		}

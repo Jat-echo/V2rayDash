@@ -1,0 +1,19 @@
+.subscription-target { margin: 0 0 16px; color: var(--text-primary); overflow-wrap: anywhere; }
+.subscription-assignment-columns { display: flex; min-height: 240px; }
+.subscription-assignment-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.subscription-assignment-panel:first-child { padding-right: 16px; border-right: 1px solid var(--border-color); }
+.subscription-assignment-panel:last-child { padding-left: 16px; }
+.subscription-assignment-header { padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
+.subscription-assignment-list { flex: 1; max-height: 280px; overflow-y: auto; }
+.subscription-assignment-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+.subscription-assignment-row .ant-checkbox-wrapper { min-width: 0; overflow-wrap: anywhere; }
+.subscription-assignment-row .ant-tag { margin-inline-end: 0; flex-shrink: 0; }
+.subscription-assignment-remark { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+.subscription-assignment-empty { text-align: center; padding: 24px 0; color: var(--text-secondary); }
+.subscription-assignment-footer { margin-top: 16px; }
+@media (max-width: 600px) {
+  .subscription-assignment-columns { flex-direction: column; gap: 24px; }
+  .subscription-assignment-panel:first-child { padding-right: 0; border-right: none; }
+  .subscription-assignment-panel:last-child { padding-left: 0; }
+  .subscription-assignment-list { max-height: 200px; }
+}

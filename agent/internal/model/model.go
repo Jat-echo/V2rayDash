@@ -7,6 +7,8 @@ type UserTrafficStat struct {
 }
 
 type NodeStatus struct {
+	BatchID          string            `json:"batch_id"`
+	TrafficEpoch     string            `json:"traffic_epoch"`
 	ServerID         string            `json:"server_id"`
 	CPUPercent       float64           `json:"cpu_percent"`
 	MemoryPercent    float64           `json:"memory_percent"`

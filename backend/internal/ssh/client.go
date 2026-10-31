@@ -1,9 +1,11 @@
 package ssh
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -50,30 +52,81 @@ func (a *PasswordAuth) AuthMethod() ssh.AuthMethod {
 
 // SSHClient wraps an SSH client connection
 type SSHClient struct {
-	client *ssh.Client
+	client  *ssh.Client
+	HostKey string
+	jump    *SSHClient
+}
+
+// JumpHost is one directly reachable SSH hop. Target authentication stays local.
+type JumpHost struct {
+	Host    string
+	Port    int
+	User    string
+	Auth    SSHAuth
+	HostKey string
 }
 
 // NewSSHClient creates a new SSH client connection
 func NewSSHClient(host string, port int, user string, auth SSHAuth) (*SSHClient, error) {
+	return NewTrustedSSHClient(host, port, user, auth, "")
+}
+
+func NewTrustedSSHClient(host string, port int, user string, auth SSHAuth, expectedKey string) (*SSHClient, error) {
+	return NewTrustedSSHClientViaJump(host, port, user, auth, expectedKey, nil)
+}
+
+func NewTrustedSSHClientViaJump(host string, port int, user string, auth SSHAuth, expectedKey string, jump *JumpHost) (*SSHClient, error) {
+	if auth == nil {
+		return nil, fmt.Errorf("SSH credentials are missing")
+	}
 	authMethod := auth.AuthMethod()
 	if authMethod == nil {
 		return nil, fmt.Errorf("ssh authentication method is invalid (check credentials)")
 	}
 
+	var hostKey string
 	config := &ssh.ClientConfig{
 		User: user,
 		Auth: []ssh.AuthMethod{authMethod},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
+			hostKey = base64.StdEncoding.EncodeToString(key.Marshal())
+			if expectedKey != "" && expectedKey != hostKey {
+				return fmt.Errorf("SSH host key changed; verify the server before adopting again")
+			}
+			return nil
+		},
 		Timeout: 60 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, fmt.Sprint(port))
+	if jump != nil {
+		bridge, err := NewTrustedSSHClient(jump.Host, jump.Port, jump.User, jump.Auth, jump.HostKey)
+		if err != nil {
+			return nil, fmt.Errorf("SSH 跳板连接失败: %w", err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		conn, err := bridge.client.DialContext(ctx, "tcp", addr)
+		if err != nil {
+			bridge.Close()
+			return nil, fmt.Errorf("SSH 跳板无法连接目标服务器: %w", err)
+		}
+		deadline := time.AfterFunc(60*time.Second, func() { conn.Close() })
+		transport, channels, requests, err := ssh.NewClientConn(conn, addr, config)
+		deadline.Stop()
+		if err != nil {
+			conn.Close()
+			bridge.Close()
+			return nil, fmt.Errorf("目标服务器 SSH 认证失败: %w", err)
+		}
+		return &SSHClient{client: ssh.NewClient(transport, channels, requests), HostKey: hostKey, jump: bridge}, nil
+	}
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
 		return nil, fmt.Errorf("ssh dial failed: %w", err)
 	}
 
-	return &SSHClient{client: client}, nil
+	return &SSHClient{client: client, HostKey: hostKey}, nil
 }
 
 // Execute runs a command and writes output to the provided writers.
@@ -93,6 +146,28 @@ func (c *SSHClient) Execute(cmd string, stdout io.Writer, stderr io.Writer) erro
 		return fmt.Errorf("command '%s' failed: %w", cmd, err)
 	}
 	return nil
+}
+
+// ExecuteInput passes sensitive payloads over stdin instead of command arguments.
+func (c *SSHClient) ExecuteInput(cmd string, input io.Reader, stdout, stderr io.Writer) error {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	session.Stdin, session.Stdout, session.Stderr = input, stdout, stderr
+	if err := session.Start(cmd); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- session.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(180 * time.Second):
+		_ = session.Close()
+		return fmt.Errorf("remote operation timed out")
+	}
 }
 
 // ExecuteStreaming starts a command and streams output to writers in real-time.
@@ -294,5 +369,9 @@ func (c *SSHClient) UploadFileExec(localPath, remotePath string) error {
 
 // Close closes the SSH client connection
 func (c *SSHClient) Close() error {
-	return c.client.Close()
+	err := c.client.Close()
+	if c.jump != nil {
+		c.jump.Close()
+	}
+	return err
 }

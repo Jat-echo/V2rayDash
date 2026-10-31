@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"github.com/google/uuid"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -38,10 +42,33 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing server_id"})
 		return
 	}
-	if _, err := h.serverRepo.GetByID(req.ServerID); err != nil {
+	server, err := h.serverRepo.GetByID(req.ServerID)
+	if err != nil {
 		// 未知的 ServerID 直接忽略，不暴露错误信息
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 		return
+	}
+	managed := server.Node != nil || req.TrafficEpoch != ""
+	if managed {
+		expected, err := h.serverRepo.AgentTokenHash(req.ServerID)
+		digest := sha256.Sum256([]byte(c.GetHeader("X-PSK")))
+		if err != nil || expected == "" || subtle.ConstantTimeCompare([]byte(expected), []byte(hex.EncodeToString(digest[:]))) != 1 {
+			c.JSON(401, gin.H{"error": "agent authentication failed"})
+			return
+		}
+		if _, err = uuid.Parse(req.BatchID); err != nil || len(req.TrafficEpoch) > 128 {
+			c.JSON(400, gin.H{"error": "invalid heartbeat batch"})
+			return
+		}
+		accepted, err := h.serverRepo.RecordManagedTraffic(&req)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "failed to persist traffic batch"})
+			return
+		}
+		if !accepted {
+			c.JSON(200, gin.H{"status": "ok"})
+			return
+		}
 	}
 
 	status := &model.NodeStatus{
@@ -60,7 +87,7 @@ func (h *AgentHandler) Heartbeat(c *gin.Context) {
 	}
 
 	// 处理用户流量统计（来自 xray stats API）
-	if len(req.UserTrafficStats) > 0 && h.accountRepo != nil && h.subRepo != nil {
+	if !managed && len(req.UserTrafficStats) > 0 && h.accountRepo != nil && h.subRepo != nil {
 		affectedSubs := make(map[string]struct{})
 		for _, ut := range req.UserTrafficStats {
 			delta := ut.Upload + ut.Download
@@ -120,8 +147,8 @@ func (h *AgentHandler) GetConfig(c *gin.Context) {
 
 	// 返回该服务器的最新配置
 	c.JSON(http.StatusOK, gin.H{
-		"server_id":        serverID,
-		"control_center":   publicURL,
-		"report_interval":  60,
+		"server_id":       serverID,
+		"control_center":  publicURL,
+		"report_interval": 60,
 	})
 }

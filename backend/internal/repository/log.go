@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"v2ray-dash/backend/internal/model"
@@ -16,16 +17,24 @@ func NewLogRepository(db *sql.DB) *LogRepository {
 }
 
 func (r *LogRepository) Create(log *model.OperationLog) error {
+	var detail any
+	if log.Detail != nil {
+		value, err := json.Marshal(log.Detail)
+		if err != nil {
+			return err
+		}
+		detail = string(value)
+	}
 	_, err := r.db.Exec(
 		`INSERT INTO operation_logs (operator, action, target_type, target_id, detail, ip)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		log.Operator, log.Action, log.TargetType, log.TargetID, log.Detail, log.IP,
+		 VALUES ($1, $2, $3, NULLIF($4,'')::uuid, $5, $6)`,
+		log.Operator, log.Action, log.TargetType, log.TargetID, detail, log.IP,
 	)
 	return err
 }
 
 func (r *LogRepository) List(filter *model.OperationLogFilter) ([]*model.OperationLog, error) {
-	query := `SELECT id, operator, action, target_type, target_id, detail, ip, created_at
+	query := `SELECT id, operator, action, target_type, COALESCE(target_id::text,''), detail, ip, created_at
 		 FROM operation_logs WHERE 1=1`
 
 	args := []interface{}{}
@@ -47,8 +56,14 @@ func (r *LogRepository) List(filter *model.OperationLogFilter) ([]*model.Operati
 	var logs []*model.OperationLog
 	for rows.Next() {
 		var l model.OperationLog
-		if err := rows.Scan(&l.ID, &l.Operator, &l.Action, &l.TargetType, &l.TargetID, &l.Detail, &l.IP, &l.CreatedAt); err != nil {
+		var detail []byte
+		if err := rows.Scan(&l.ID, &l.Operator, &l.Action, &l.TargetType, &l.TargetID, &detail, &l.IP, &l.CreatedAt); err != nil {
 			return nil, err
+		}
+		if len(detail) > 0 {
+			if err := json.Unmarshal(detail, &l.Detail); err != nil {
+				return nil, err
+			}
 		}
 		logs = append(logs, &l)
 	}

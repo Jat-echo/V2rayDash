@@ -21,6 +21,7 @@ type ServerHandler struct {
 	repo       *repository.ServerRepository
 	logRepo    *repository.LogRepository
 	accountSvc *service.AccountService
+	managed    *ManagedNodeHandler
 }
 
 func NewServerHandler(db *sql.DB) *ServerHandler {
@@ -30,6 +31,7 @@ func NewServerHandler(db *sql.DB) *ServerHandler {
 		repo:       serverRepo,
 		logRepo:    repository.NewLogRepository(db),
 		accountSvc: service.NewAccountService(accountRepo, serverRepo),
+		managed:    NewManagedNodeHandler(db),
 	}
 }
 
@@ -132,7 +134,11 @@ func (h *ServerHandler) RestartXray(c *gin.Context) {
 		return
 	}
 
-	client, err := ssh.NewSSHClient(server.IP, server.SSHPort, server.SSHUser, buildSSHAuth(server))
+	if server.Node != nil {
+		h.managed.Restart(c)
+		return
+	}
+	client, err := service.NewServerSSHClient(h.repo, server, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("SSH连接失败: %v", err)})
 		return
@@ -155,6 +161,10 @@ func (h *ServerHandler) SyncXray(c *gin.Context) {
 		return
 	}
 
+	if server.Node != nil {
+		h.managed.Publish(c)
+		return
+	}
 	if err := h.accountSvc.SyncAllToRemote(id, buildSSHAuth(server)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("同步失败: %v", err)})
 		return
@@ -187,6 +197,21 @@ func (h *ServerHandler) PingAll(c *gin.Context) {
 			}
 			addr := net.JoinHostPort(ip, strconv.Itoa(port))
 			start := time.Now()
+			if servers[idx].SSHJumpServerID != "" {
+				server, err := h.repo.GetByIDForInstall(id)
+				if err != nil {
+					results[idx] = PingResult{ServerID: id, LatencyMs: -1}
+					return
+				}
+				client, err := service.NewServerSSHClient(h.repo, server, nil)
+				if err != nil {
+					results[idx] = PingResult{ServerID: id, LatencyMs: -1}
+					return
+				}
+				results[idx] = PingResult{ServerID: id, LatencyMs: time.Since(start).Milliseconds()}
+				client.Close()
+				return
+			}
 			conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 			if err != nil {
 				results[idx] = PingResult{ServerID: id, LatencyMs: -1}

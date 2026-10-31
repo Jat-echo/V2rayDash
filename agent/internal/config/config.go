@@ -6,9 +6,11 @@ import (
 )
 
 type Config struct {
-	ServerID        string `json:"server_id"`
+	CoreService      string `json:"core_service"`
+	StatePath        string `json:"state_path"`
+	ServerID         string `json:"server_id"`
 	ControlCenterURL string `json:"control_center_url"`
-	PSK             string `json:"psk"` // Pre-shared key for authentication
+	PSK              string `json:"psk"` // Pre-shared key for authentication
 }
 
 func Load(path string) (*Config, error) {

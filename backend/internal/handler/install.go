@@ -12,11 +12,11 @@ import (
 )
 
 type InstallHandler struct {
-	scriptPath   string
-	serverRepo   *repository.ServerRepository
-	accountRepo  *repository.AccountRepository
-	accountSvc   *service.AccountService
-	settingRepo  *repository.SettingRepository
+	scriptPath  string
+	serverRepo  *repository.ServerRepository
+	accountRepo *repository.AccountRepository
+	accountSvc  *service.AccountService
+	settingRepo *repository.SettingRepository
 }
 
 type InstallRequest struct {
@@ -65,6 +65,10 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	}
 
 	// Create SSH auth based on stored credentials
+	if server.Node != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "已接管节点请使用发布配置；重新安装可能覆盖现有线路"})
+		return
+	}
 	var auth ssh.SSHAuth
 	if server.SSHKeyType == "password" {
 		auth = &ssh.PasswordAuth{Password: server.SSHPassword}
@@ -104,7 +108,7 @@ func (h *InstallHandler) StartInstall(c *gin.Context) {
 	}
 
 	// Create installer
-	installer := service.NewInstaller(serverID, server.IP, server.SSHPort, server.SSHUser, auth, h.scriptPath)
+	installer := service.NewInstaller(server, h.serverRepo, h.scriptPath)
 
 	// Execute installation with streaming output
 	result := installer.InstallStreaming(c.Writer, flusher, installConfig)

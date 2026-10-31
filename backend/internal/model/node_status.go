@@ -5,15 +5,15 @@ import (
 )
 
 type NodeStatus struct {
-	ID           string    `json:"id"`
-	ServerID     string    `json:"server_id"`
-	CPUPercent   float64   `json:"cpu_percent"`
+	ID            string    `json:"id"`
+	ServerID      string    `json:"server_id"`
+	CPUPercent    float64   `json:"cpu_percent"`
 	MemoryPercent float64   `json:"memory_percent"`
-	DiskPercent  float64   `json:"disk_percent"`
-	BandwidthIn  int64     `json:"bandwidth_in"`
-	BandwidthOut int64     `json:"bandwidth_out"`
-	V2rayStatus  string    `json:"v2ray_status"`
-	ReportedAt   time.Time `json:"reported_at"`
+	DiskPercent   float64   `json:"disk_percent"`
+	BandwidthIn   int64     `json:"bandwidth_in"`
+	BandwidthOut  int64     `json:"bandwidth_out"`
+	V2rayStatus   string    `json:"v2ray_status"`
+	ReportedAt    time.Time `json:"reported_at"`
 }
 
 type UserTrafficStat struct {
@@ -23,6 +23,8 @@ type UserTrafficStat struct {
 }
 
 type HeartbeatRequest struct {
+	BatchID          string            `json:"batch_id"`
+	TrafficEpoch     string            `json:"traffic_epoch"`
 	ServerID         string            `json:"server_id" binding:"required"`
 	CPUPercent       float64           `json:"cpu_percent"`
 	MemoryPercent    float64           `json:"memory_percent"`
@@ -44,9 +46,9 @@ type BandwidthPoint struct {
 }
 
 type AccountTrafficSeries struct {
-	AccountID  string          `json:"account_id"`
-	Email      string          `json:"email"`
-	ServerName string          `json:"server_name"`
+	AccountID  string           `json:"account_id"`
+	Email      string           `json:"email"`
+	ServerName string           `json:"server_name"`
 	Points     []BandwidthPoint `json:"points"`
 }
 
@@ -69,8 +71,8 @@ type NodeStatusCurrent struct {
 }
 
 type NodeStatusResponse struct {
-	ServerID        string             `json:"server_id"`
-	Metrics         NodeStatusMetrics  `json:"metrics"`
-	Current         *NodeStatusCurrent `json:"current"`
-	V2rayRestarts   int                `json:"v2ray_restarts"` // 时间窗口内崩溃重启次数
+	ServerID      string             `json:"server_id"`
+	Metrics       NodeStatusMetrics  `json:"metrics"`
+	Current       *NodeStatusCurrent `json:"current"`
+	V2rayRestarts int                `json:"v2ray_restarts"` // 时间窗口内崩溃重启次数
 }
