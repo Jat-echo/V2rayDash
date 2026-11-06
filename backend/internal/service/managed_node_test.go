@@ -123,11 +123,30 @@ func TestManagedSubscriptionsKeepTemplateAndRealityParameters(t *testing.T) {
 	require.True(t, utf8.ValidString(textValue(proxy["name"])))
 	require.Equal(t, "192.0.2.1", proxy["server"])
 	require.Equal(t, "abcdef1234", object(proxy["reality-opts"])["short-id"])
+	require.Equal(t, "chrome", proxy["client-fingerprint"])
 	require.Equal(t, true, object(proxy["reality-opts"])["support-x25519mlkem768"])
 	require.Len(t, array(config["proxy-groups"]), 13)
 	require.Len(t, array(config["rules"]), 872)
 	require.Equal(t, true, object(config["dns"])["enable"])
 	require.Contains(t, s.GetAccountLink(account, server.IP, "vless", reality, "test"), "sid=abcdef1234")
+	shadowrocket, err := s.GenerateShadowrocketSubscriptionMulti([]*model.Account{account}, map[string]*model.Server{"entry": server}, map[string]*RealityConfig{"entry": reality})
+	require.NoError(t, err)
+	var ios map[string]any
+	require.NoError(t, yaml.Unmarshal([]byte(shadowrocket), &ios))
+	require.Len(t, ios, 1, "a node subscription must not overwrite phone routing or DNS")
+	iosProxies := array(ios["proxies"])
+	require.Len(t, iosProxies, 1)
+	iosProxy := object(iosProxies[0])
+	require.Equal(t, "Safari26_3", iosProxy["client-fingerprint"])
+	require.NotContains(t, object(iosProxy["reality-opts"]), "support-x25519mlkem768")
+	// All authentication, transport, naming and routing parameters remain identical.
+	iosProxy["client-fingerprint"] = "chrome"
+	object(iosProxy["reality-opts"])["support-x25519mlkem768"] = true
+	require.Equal(t, proxy, iosProxy)
+	account.Enabled = false
+	empty, err := s.GenerateShadowrocketSubscriptionMulti([]*model.Account{account}, map[string]*model.Server{"entry": server}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "proxies: []\n", empty)
 	reality.ShortID = ""
 	reality.ShortIDConfigured = true
 	require.Equal(t, "", shortID(reality), "an explicitly empty short ID must not use the legacy default")

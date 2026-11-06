@@ -152,6 +152,37 @@ func TestRelayManagementWorkflow(t *testing.T) {
 	require.Len(t, profile["proxies"], 3)
 	require.Len(t, profile["proxy-groups"], 13)
 	require.Len(t, profile["rules"], 872)
+	for _, client := range []struct{ ua, format, fingerprint string }{
+		{"Shadowrocket/2.2.94", "", "Safari26_3"},
+		{"Shadowrocket/2.2.94", "clash_meta", "chrome"},
+		{"ClashVerge/2.5.2", "", "chrome"},
+		{"mihomo/1.19", "", "chrome"},
+		{"", "shadowrocket", "Safari26_3"},
+	} {
+		path := "/api/subscribe/" + sub.UUID
+		if client.format != "" {
+			path += "?format=" + client.format
+		}
+		req := httptest.NewRequest("GET", path, nil)
+		req.Header.Set("User-Agent", client.ua)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, req)
+		require.Equal(t, 200, response.Code, response.Body.String())
+		require.Equal(t, "User-Agent", response.Header().Get("Vary"))
+		var body map[string]any
+		require.NoError(t, yaml.Unmarshal(response.Body.Bytes(), &body))
+		clients := body["proxies"].([]any)
+		require.Len(t, clients, 3)
+		for _, raw := range clients {
+			require.Equal(t, client.fingerprint, raw.(map[string]any)["client-fingerprint"])
+		}
+		if client.fingerprint == "Safari26_3" {
+			require.Len(t, body, 1)
+		} else {
+			require.Len(t, body["rules"], 872)
+			require.Len(t, body["proxy-groups"], 13)
+		}
+	}
 	publicNodes := profile["proxies"].([]any)
 	for i, flag := range []string{"🇺🇸", "🇺🇸", "🇯🇵"} {
 		require.True(t, strings.HasPrefix(publicNodes[i].(map[string]any)["name"].(string), flag+" "), "flags must follow the landing, even when paths share a Hong Kong entry")

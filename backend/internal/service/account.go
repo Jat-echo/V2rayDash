@@ -204,13 +204,29 @@ func (s *AccountService) GenerateVLESSSubscription(accounts []*model.Account, se
 	return strings.Join(lines, "\n")
 }
 
-// GenerateClashMetaSubscription 生成 Clash.Meta 订阅内容
-func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account, serverIP string, reality *RealityConfig, serverName string) (string, error) {
+// tlsProxy uses the common Clash/Shadowrocket proxy schema; fingerprints are client-specific.
+func tlsProxy(account *model.Account, serverIP, name, fingerprint string, reality *RealityConfig) map[string]interface{} {
 	port := 443
 	if reality != nil && reality.Enabled && reality.Port > 0 {
 		port = reality.Port
 	}
+	proxy := map[string]interface{}{
+		"name": name, "type": "vless", "server": serverIP, "port": port,
+		"uuid": account.UUID, "network": "tcp", "tls": true, "udp": true,
+		"flow": "xtls-rprx-vision", "client-fingerprint": fingerprint,
+	}
+	if reality != nil && reality.Enabled {
+		proxy["servername"] = reality.ServerName
+		proxy["reality-opts"] = map[string]interface{}{
+			"public-key": reality.PublicKey, "short-id": shortID(reality),
+			"support-x25519mlkem768": reality.SupportMLKEM,
+		}
+	}
+	return proxy
+}
 
+// GenerateClashMetaSubscription 生成 Clash.Meta 订阅内容
+func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account, serverIP string, reality *RealityConfig, serverName string) (string, error) {
 	// 使用服务器名称作为节点名称
 	nodeName := serverName
 	if nodeName == "" {
@@ -223,41 +239,7 @@ func (s *AccountService) GenerateClashMetaSubscription(accounts []*model.Account
 			continue
 		}
 
-		var proxy map[string]interface{}
-		if reality != nil && reality.Enabled {
-			proxy = map[string]interface{}{
-				"name":               nodeName,
-				"type":               "vless",
-				"server":             serverIP,
-				"port":               port,
-				"uuid":               acc.UUID,
-				"network":            "tcp",
-				"tls":                true,
-				"udp":                true,
-				"flow":               "xtls-rprx-vision",
-				"servername":         reality.ServerName,
-				"client-fingerprint": "chrome",
-				"reality-opts": map[string]interface{}{
-					"public-key":             reality.PublicKey,
-					"short-id":               shortID(reality),
-					"support-x25519mlkem768": reality.SupportMLKEM,
-				},
-			}
-		} else {
-			proxy = map[string]interface{}{
-				"name":               nodeName,
-				"type":               "vless",
-				"server":             serverIP,
-				"port":               port,
-				"uuid":               acc.UUID,
-				"network":            "tcp",
-				"tls":                true,
-				"udp":                true,
-				"flow":               "xtls-rprx-vision",
-				"client-fingerprint": "chrome",
-			}
-		}
-		proxies = append(proxies, proxy)
+		proxies = append(proxies, tlsProxy(acc, serverIP, nodeName, "chrome", reality))
 	}
 
 	// 构建代理组名称列表，使用服务器名称
@@ -1767,48 +1749,9 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 		}
 		reality := realityConfigs[acc.ServerID]
 
-		port := 443
-		if reality != nil && reality.Enabled && reality.Port > 0 {
-			port = reality.Port
-		}
-
 		nodeName := subscriptionNodeName(acc, server)
 
-		var proxy map[string]interface{}
-		if reality != nil && reality.Enabled {
-			proxy = map[string]interface{}{
-				"name":               nodeName,
-				"type":               "vless",
-				"server":             server.IP,
-				"port":               port,
-				"uuid":               acc.UUID,
-				"network":            "tcp",
-				"tls":                true,
-				"udp":                true,
-				"flow":               "xtls-rprx-vision",
-				"servername":         reality.ServerName,
-				"client-fingerprint": "chrome",
-				"reality-opts": map[string]interface{}{
-					"public-key":             reality.PublicKey,
-					"short-id":               shortID(reality),
-					"support-x25519mlkem768": reality.SupportMLKEM,
-				},
-			}
-		} else {
-			proxy = map[string]interface{}{
-				"name":               nodeName,
-				"type":               "vless",
-				"server":             server.IP,
-				"port":               port,
-				"uuid":               acc.UUID,
-				"network":            "tcp",
-				"tls":                true,
-				"udp":                true,
-				"flow":               "xtls-rprx-vision",
-				"client-fingerprint": "chrome",
-			}
-		}
-		proxies = append(proxies, proxy)
+		proxies = append(proxies, tlsProxy(acc, server.IP, nodeName, "chrome", reality))
 		proxyNames = append(proxyNames, nodeName)
 	}
 
@@ -1863,6 +1806,29 @@ func (s *AccountService) GenerateClashMetaSubscriptionMulti(accounts []*model.Ac
 		return "", err
 	}
 	return string(data), nil
+}
+
+// GenerateShadowrocketSubscriptionMulti emits proxy-only YAML without replacing phone rules or DNS.
+func (s *AccountService) GenerateShadowrocketSubscriptionMulti(accounts []*model.Account, servers map[string]*model.Server, realityConfigs map[string]*RealityConfig) (string, error) {
+	var rows []string
+	for _, account := range accounts {
+		server := servers[account.ServerID]
+		if !account.Enabled || server == nil {
+			continue
+		}
+		proxy := tlsProxy(account, server.IP, subscriptionNodeName(account, server), "Safari26_3", realityConfigs[account.ServerID])
+		// Shadowrocket selects the ClientHello by profile, not Mihomo's ML-KEM switch.
+		delete(object(proxy["reality-opts"]), "support-x25519mlkem768")
+		row, err := json.Marshal(proxy)
+		if err != nil {
+			return "", err
+		}
+		rows = append(rows, "  - "+string(row))
+	}
+	if len(rows) == 0 {
+		return "proxies: []\n", nil
+	}
+	return "proxies:\n" + strings.Join(rows, "\n") + "\n", nil
 }
 
 // GenerateSingBoxSubscriptionMulti 生成多服务器 Sing-box 订阅内容

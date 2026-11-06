@@ -525,7 +525,20 @@ export default function SubscriptionList() {
             <Input value={currentLink} readOnly style={{ flex: 1 }} />
             <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentLink)} />
           </div>
-          <h4 style={{ marginBottom: 8 }}>Base64 编码 (ShadowRocket/Quantumult)</h4>
+          {[
+            { format: 'shadowrocket', label: 'Shadowrocket（iOS · Safari26_3）' },
+            { format: 'clash_meta', label: 'Clash Verge / Mihomo（Windows）' },
+          ].map(({ format, label }) => {
+            const link = currentLink ? `${currentLink}${currentLink.includes('?') ? '&' : '?'}format=${format}` : ''
+            return <div key={format}>
+              <h4 style={{ marginBottom: 8 }}>{label}</h4>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <Input aria-label={`${label} 订阅地址`} value={link} readOnly style={{ flex: 1, minWidth: 0 }} />
+                <Button aria-label={`复制 ${label} 订阅地址`} disabled={!link} icon={<CopyOutlined />} onClick={() => copyToClipboard(link)} />
+              </div>
+            </div>
+          })}
+          <h4 style={{ marginBottom: 8 }}>订阅地址 Base64 编码</h4>
           <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
             <Input value={currentEncoded} readOnly style={{ flex: 1 }} />
             <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(currentEncoded)} />
@@ -541,7 +554,8 @@ export default function SubscriptionList() {
             ) : null}
           </div>
           <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
-            <p>支持格式: ?format=vless (默认) | ?format=clash_meta | ?format=singbox | ?format=ss (ShadowRocket)</p>
+            <p>通用地址按客户端自动选择格式，也可复制上方专用地址。其他格式：?format=vless、?format=singbox。</p>
+            <p>节点指纹随订阅更新；客户端本地强制设置可能覆盖订阅下发值。</p>
           </div>
         </div>
       </Modal>

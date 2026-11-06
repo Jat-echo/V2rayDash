@@ -325,16 +325,23 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 
 	subType := c.Query("format")
 	if subType == "" {
-		userAgent := c.GetHeader("User-Agent")
-		if strings.Contains(strings.ToLower(userAgent), "clash") {
+		userAgent := strings.ToLower(c.GetHeader("User-Agent"))
+		switch {
+		case strings.Contains(userAgent, "shadowrocket"):
+			subType = "shadowrocket"
+		case strings.Contains(userAgent, "clash"), strings.Contains(userAgent, "mihomo"):
 			subType = "clash_meta"
-		} else {
+		default:
 			subType = "vless"
 		}
 	}
+	c.Header("Vary", "User-Agent")
 
 	var content string
 	switch subType {
+	case "shadowrocket":
+		content, err = h.accountSvc.GenerateShadowrocketSubscriptionMulti(accounts, serverMap, realityConfigs)
+		c.Header("Content-Type", "text/plain; charset=utf-8")
 	case "clash_meta":
 		content, _ = h.accountSvc.GenerateClashMetaSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "text/plain; charset=utf-8")
@@ -347,6 +354,10 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 	default:
 		content = h.accountSvc.GenerateVLESSSubscriptionMulti(accounts, serverMap, realityConfigs)
 		c.Header("Content-Type", "text/plain; charset=utf-8")
+	}
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to generate subscription")
+		return
 	}
 
 	c.Header("Cache-Control", "private, no-store")

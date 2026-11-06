@@ -46,6 +46,10 @@ func (s *NodeService) InstallMonitor(serverID, publicURL, binaryPath string) err
 		return err
 	}
 	defer client.Close()
+	command, err := nodePythonCommand(client, nodeMonitorScript, false)
+	if err != nil {
+		return err
+	}
 	remotePath := "/tmp/v2raydash-monitor-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err = client.UploadFileExec(binaryPath, remotePath); err != nil {
 		return err
@@ -64,7 +68,6 @@ func (s *NodeService) InstallMonitor(serverID, publicURL, binaryPath string) err
 	checksum := sha256.Sum256(binary)
 	payload, _ := json.Marshal(map[string]any{"source": remotePath, "sha256": hex.EncodeToString(checksum[:]), "server_id": serverID, "url": strings.TrimRight(publicURL, "/"), "psk": token, "core_service": service})
 	var out, stderr bytes.Buffer
-	command := "sudo -n python3 -c '" + strings.ReplaceAll(nodeMonitorScript, "'", "'\"'\"'") + "'"
 	if err = client.ExecuteInput(command, bytes.NewReader(payload), &out, &stderr); err != nil {
 		_ = s.servers.SetAgentTokenHash(serverID, previous)
 		return fmt.Errorf("监控安装失败，请检查节点架构与服务权限；未重启代理服务")

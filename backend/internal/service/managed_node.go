@@ -20,6 +20,9 @@ import (
 //go:embed node_remote.py
 var nodeRemoteScript string
 
+//go:embed node_dependencies.sh
+var nodeDependenciesScript string
+
 // ponytail: serial node operations suit the private panel; use per-node locks if concurrent publishing becomes necessary.
 var nodeOperationMu sync.Mutex
 
@@ -54,13 +57,53 @@ func object(v any) map[string]any {
 func array(v any) []any      { a, _ := v.([]any); return a }
 func textValue(v any) string { s, _ := v.(string); return s }
 
-func remoteNodeCall(client *ssh.SSHClient, payload any) (*remoteNode, error) {
+func nodePythonCommand(client *ssh.SSHClient, script string, needsCurl bool) (string, error) {
+	var out, stderr bytes.Buffer
+	bootstrap := "sh -s --"
+	if needsCurl {
+		bootstrap += " curl"
+	}
+	err := client.ExecuteInput(bootstrap, strings.NewReader(nodeDependenciesScript), &out, &stderr)
+	mode := strings.TrimSpace(out.String())
+	if err != nil {
+		reason := map[string]string{
+			"error:privilege":           "需要 root 或免密 sudo 权限",
+			"error:timeout_unavailable": "节点缺少 timeout 命令，无法限制安装时长",
+			"error:temporary_file":      "无法创建临时文件，请检查磁盘空间和权限",
+			"error:package_manager":     "缺少依赖，系统没有支持的 apt-get、dnf 或 yum 包管理器",
+			"error:install_timeout":     "安装超时，请检查软件源网络后重试",
+			"error:package_lock":        "包管理器被其他安装任务占用，请稍后重试",
+			"error:disk_space":          "磁盘空间不足",
+			"error:package_network":     "软件源连接或证书校验失败，请检查节点网络和软件源",
+			"error:install_failed":      "软件包安装失败，请检查节点包管理器状态",
+			"error:python_version":      "需要 Python 3.8 或更高版本并支持 SSL，系统软件源未提供可用版本",
+			"error:certificates":        "系统 CA 证书不可用",
+			"error:curl":                "安装后仍无法找到 curl",
+		}[mode]
+		if reason == "" {
+			reason = "SSH 检查未完成或连接中断，请重试"
+		}
+		return "", fmt.Errorf("节点运行依赖准备失败：%s", reason)
+	}
+	command := "python3 -c '" + strings.ReplaceAll(script, "'", "'\"'\"'") + "'"
+	if mode == "sudo" {
+		command = "sudo -n " + command
+	} else if mode != "root" {
+		return "", fmt.Errorf("节点运行依赖检查返回异常结果")
+	}
+	return command, nil
+}
+
+func remoteNodeCall(client *ssh.SSHClient, payload map[string]any) (*remoteNode, error) {
 	input, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
+	command, err := nodePythonCommand(client, nodeRemoteScript, payload["operation"] == "publish" || payload["operation"] == "probe")
+	if err != nil {
+		return nil, err
+	}
 	var out, stderr bytes.Buffer
-	command := "sudo -n python3 -c '" + strings.ReplaceAll(nodeRemoteScript, "'", "'\"'\"'") + "'"
 	execErr := client.ExecuteInput(command, bytes.NewReader(input), &out, &stderr)
 	var result remoteNode
 	if err = json.Unmarshal(out.Bytes(), &result); err != nil {

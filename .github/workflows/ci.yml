@@ -58,7 +58,7 @@ jobs:
       - run: go build ./cmd/server
         working-directory: backend
       - name: Verify configuration publish and rollback
-        run: python3 -m unittest discover -s backend/internal/service -p node_remote_test.py -v
+        run: python3 -m unittest discover -s backend/internal/service -p 'node_*test.py' -v
       - run: go test ./...
         working-directory: agent
       - run: go build ./cmd/agent
