@@ -318,7 +318,6 @@ func (h *SubscriptionHandler) ServeSubscription(c *gin.Context) {
 			PublicKey:         server.RealityPublicKey,
 			ShortID:           service.RealityShortID(server),
 			ShortIDConfigured: server.Node != nil,
-			SupportMLKEM:      server.Node != nil && server.Node.Layout != "legacy",
 			Port:              server.RealityPort,
 		}
 	}

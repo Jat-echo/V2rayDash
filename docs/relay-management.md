@@ -67,7 +67,7 @@
 ## 订阅与用量
 
 - 通用订阅地址按 User-Agent 为 Shadowrocket 返回节点专用 YAML（仅 `proxies`，节点指纹 `Safari26_3`），为 Clash / Mihomo 返回原有完整 Clash 配置；也可显式使用 `?format=shadowrocket` 或 `?format=clash_meta`，显式格式优先。其他客户端默认仍为 VLESS 链接，`?format=vless` 保留原行为。
-- Clash Verge / Mihomo 保持 `client-fingerprint: chrome`；受管中转和新落地的 Reality 节点继续下发 `support-x25519mlkem768: true`，原有 legacy 节点的开关值保留。不会把 Shadowrocket 的配置名直接套到其他内核。
+- Clash Verge / Mihomo 保持 `client-fingerprint: chrome`；所有 Reality 节点显式下发 `support-x25519mlkem768: true`，单账号和多节点订阅共用该规则。`legacy` 仅表示安装目录布局，不能据此判断实际 Xray 版本并关闭 ML-KEM。Shadowrocket 继续使用自己的指纹配置。
 - Shadowrocket 节点订阅保留账号、地址、端口、Flow、SNI、公钥、Short ID、排序和落地旗帜，不覆盖手机已有的 DNS 或分流规则。旧版客户端可能忽略节点指纹，较新版本也可能启用本地强制覆盖；平台下发不能保证覆盖 App 的全局偏好，须在手机更新订阅后核对。Safari26_3 已由用户在故障手机上手动切换并确认恢复，自动下发的实际采用情况仍需导入验证。
 - Clash Meta / Clash Verge 完整配置沿用现有模板，保留 13 个策略组、872 条规则，使用节点实际 Short ID。
 - 上游传输账号由链路自动维护，不进入用户账号列表，不能单独修改、添加到客户订阅或导出订阅。

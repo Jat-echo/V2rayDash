@@ -112,7 +112,7 @@ func TestManagedSubscriptionsKeepTemplateAndRealityParameters(t *testing.T) {
 	s := NewAccountService(nil, nil)
 	account := &model.Account{ID: "one", ServerID: "entry", UUID: "11111111-1111-4111-8111-111111111111", Email: "中文用户的美国出口线路一号", Enabled: true}
 	server := &model.Server{ID: "entry", Name: "中转入口", IP: "192.0.2.1", CountryCode: "US"}
-	reality := &RealityConfig{Enabled: true, Port: 443, ServerName: "academy.nvidia.com", PublicKey: "public-key", ShortID: "abcdef1234", SupportMLKEM: true}
+	reality := &RealityConfig{Enabled: true, Port: 443, ServerName: "academy.nvidia.com", PublicKey: "public-key", ShortID: "abcdef1234"}
 	content, err := s.GenerateClashMetaSubscriptionMulti([]*model.Account{account}, map[string]*model.Server{"entry": server}, map[string]*RealityConfig{"entry": reality})
 	require.NoError(t, err)
 	var config map[string]any

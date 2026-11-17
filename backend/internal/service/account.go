@@ -68,7 +68,6 @@ func serverFlag(server *model.Server) string {
 type RealityConfig struct {
 	ShortID           string
 	ShortIDConfigured bool
-	SupportMLKEM      bool
 	Enabled           bool
 	ServerName        string
 	PublicKey         string
@@ -219,7 +218,8 @@ func tlsProxy(account *model.Account, serverIP, name, fingerprint string, realit
 		proxy["servername"] = reality.ServerName
 		proxy["reality-opts"] = map[string]interface{}{
 			"public-key": reality.PublicKey, "short-id": shortID(reality),
-			"support-x25519mlkem768": reality.SupportMLKEM,
+			// Keep Chrome's ML-KEM key share; an installation layout does not identify the core version.
+			"support-x25519mlkem768": true,
 		}
 	}
 	return proxy

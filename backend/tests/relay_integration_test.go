@@ -184,6 +184,27 @@ func TestRelayManagementWorkflow(t *testing.T) {
 		}
 	}
 	publicNodes := profile["proxies"].([]any)
+	t.Run("legacy layout keeps ML-KEM in both export endpoints", func(t *testing.T) {
+		_, err := db.Exec(`UPDATE managed_nodes SET layout='legacy' WHERE server_id=$1`, first.ID)
+		require.NoError(t, err)
+		defer db.Exec(`UPDATE managed_nodes SET layout='exit' WHERE server_id=$1`, first.ID)
+		var directID string
+		for _, account := range sub.Accounts {
+			if account.ServerID == first.ID {
+				directID = account.ID
+			}
+		}
+		require.NotEmpty(t, directID)
+		for _, path := range []string{"/api/subscribe/" + sub.UUID + "?format=clash_meta", "/api/accounts/" + directID + "/subscribe?type=clash_meta"} {
+			response := request(t, router, "GET", path, "", auth.Token, 200)
+			var config map[string]any
+			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &config))
+			node := config["proxies"].([]any)[0].(map[string]any)
+			require.Equal(t, first.IP, node["server"])
+			require.Equal(t, "chrome", node["client-fingerprint"])
+			require.Equal(t, true, node["reality-opts"].(map[string]any)["support-x25519mlkem768"])
+		}
+	})
 	for i, flag := range []string{"🇺🇸", "🇺🇸", "🇯🇵"} {
 		require.True(t, strings.HasPrefix(publicNodes[i].(map[string]any)["name"].(string), flag+" "), "flags must follow the landing, even when paths share a Hong Kong entry")
 	}
