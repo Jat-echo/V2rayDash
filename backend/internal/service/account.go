@@ -417,7 +417,7 @@ func buildProxyGroups(proxyNames []string) []map[string]interface{} {
 		{
 			"name":    "AI",
 			"type":    "select",
-			"proxies": proxyNames,
+			"proxies": []string{"PROXY"},
 		},
 	}
 
